@@ -1,0 +1,33 @@
+# Gradle
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local configuration files
+local.properties
+*.iml
+.idea/
+/.settings/
+.DS_Store
+
+# Android Studio
+.cxx/
+.externalNativeBuild/
+captures/
+
+# Keystore files (uncomment and rename if needed)
+# *.jks
+# *.keystore
+
+# Log files
+*.log
+
+# Android/Google services configs (keep private if present)
+# google-services.json
+
+# Misc
+*.apk
+*.ap_ 
+*.aab
+*.hprof

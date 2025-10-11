@@ -1,0 +1,408 @@
+import 'package:flutter/material.dart';
+import 'dart:math' as math;
+import 'dart:ui' as ui; // For PathMetric and Tangent
+
+void main() {
+  runApp(const NavAIApp());
+}
+
+class NavAIApp extends StatelessWidget {
+  const NavAIApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'NavAI Path Animation',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark(),
+      home: const NavAIHomePage(),
+    );
+  }
+}
+
+class NavAIHomePage extends StatefulWidget {
+  const NavAIHomePage({super.key});
+
+  @override
+  State<NavAIHomePage> createState() => _NavAIHomePageState();
+}
+
+class _NavAIHomePageState extends State<NavAIHomePage>
+    with TickerProviderStateMixin {
+  late AnimationController _pathController;
+  late AnimationController _starController;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // 1. Path Controller (4s duration, runs once for drawing)
+    _pathController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    );
+
+    // 2. Star Controller (7s duration for motion, matching the SVG)
+    _starController = AnimationController(
+      vsync: this,
+      // FIX: Corrected Duration constructor usage from Duration(Duration.milliseconds: 7000)
+      duration: const Duration(milliseconds: 7000), 
+    );
+
+    // --- Animation Sequencing Logic ---
+    _pathController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        // Step 2: Path drawing is done, start star movement
+        _starController.forward(from: 0.0);
+      }
+    });
+
+    _starController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        // Step 3: Star movement is done, wait 0.5s, then restart the sequence
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _pathController.reset();
+          _starController.reset();
+          _pathController.forward(from: 0.0);
+        });
+      }
+    });
+
+    // Step 1: Start the entire sequence by drawing the paths
+    _pathController.forward(from: 0.0);
+  }
+
+  @override
+  void dispose() {
+    _pathController.dispose();
+    _starController.dispose();
+    super.dispose();
+  }
+
+  BoxDecoration _buildBackground() {
+    // Ensuring the radial gradient looks full-screen
+    return const BoxDecoration(
+      gradient: RadialGradient(
+        center: Alignment.center,
+        radius: 1.0, // Increased radius to ensure full coverage
+        colors: [
+          Color(0xFF0f2027), // Dark Navy/Blue
+          Color(0xFF203a43), // Mid tone
+          Color(0xFF2c5364), // Lighter tone
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: _buildBackground(),
+        child: Center(
+          // Using LayoutBuilder to dynamically center the content on large screens
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                        maxWidth: 600, minHeight: 400),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 30, vertical: 40),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0d1b2a),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white10, width: 1),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black38,
+                            blurRadius: 25,
+                            offset: Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // --- Animation Container ---
+                          SizedBox(
+                            height: 250,
+                            width: double.infinity,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(15),
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0xFF0a192f),
+                                    Color(0xFF0d253f),
+                                  ],
+                                ),
+                              ),
+                              child: AnimatedBuilder(
+                                animation: Listenable.merge(
+                                    [_pathController, _starController]),
+                                builder: (context, child) {
+                                  return CustomPaint(
+                                    painter: PathAnimationPainter(
+                                      pathAnimation: _pathController,
+                                      starAnimation: Tween<double>(
+                                        begin: 0.0,
+                                        end: 1.0,
+                                      ).animate(
+                                        CurvedAnimation(
+                                          parent: _starController,
+                                          curve: Curves.easeInOut, // Smoother curve
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          const Text(
+                            'Welcome to NavAI',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Smart navigation, designed for you.',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFFcbd5e0),
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 20),
+                          _buildButton('Start with Voice', Icons.mic,
+                              const Color(0xFF2563eb), Colors.white),
+                          _buildButton('Continue with Touch', Icons.smartphone,
+                              const Color(0xFF1f2937), const Color(0xFFd1d5db),
+                              borderColor: const Color(0xFF374151)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildButton(String text, IconData icon, Color background,
+      Color foreground,
+      {Color? borderColor}) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: () {
+          // Log press event
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: background,
+          foregroundColor: foreground,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: borderColor != null
+                ? BorderSide(color: borderColor, width: 1)
+                : BorderSide.none,
+          ),
+          textStyle: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 20),
+            const SizedBox(width: 8),
+            Text(text),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class PathAnimationPainter extends CustomPainter {
+  final Animation<double> pathAnimation;
+  final Animation<double> starAnimation;
+  // ViewBox is 400x200, Center Y is 100.
+  final Size viewBox = const Size(400, 200); 
+
+  PathAnimationPainter(
+      {required this.pathAnimation, required this.starAnimation})
+      : super(repaint: Listenable.merge([pathAnimation, starAnimation]));
+
+  Path _getPath1() {
+    // Matches SVG path 1: M 0 120 Q 150 40 250 90 T 400 50
+    final path = Path()..moveTo(0, 120);
+    path.quadraticBezierTo(150, 40, 250, 90);
+    // T 400 50: Reflected CP = (2*250 - 150, 2*90 - 40) = (350, 140)
+    path.quadraticBezierTo(350, 140, 400, 50); 
+    return path;
+  }
+
+  Path _getPath2() {
+    // Matches SVG path 2: M 0 200 Q 150 120 250 170 T 400 130
+    final path = Path()..moveTo(0, 200);
+    path.quadraticBezierTo(150, 120, 250, 170);
+    // T 400 130: Reflected CP = (2*250 - 150, 2*170 - 120) = (350, 220)
+    path.quadraticBezierTo(350, 220, 400, 130);
+    return path;
+  }
+
+  Path _getCenterPath() {
+    // Matches SVG pathCenter: M 0 140 Q 150 60 250 100 T 400 55
+    final path = Path()..moveTo(0, 140); 
+    path.quadraticBezierTo(150, 60, 250, 100);
+    // T 400 55: Reflected CP = (2*250 - 150, 2*100 - 60) = (350, 140)
+    path.quadraticBezierTo(350, 140, 400, 55);
+    return path;
+  }
+
+  // Creates a sharp star shape path based on the provided SVG path
+  Path _createStarShape(double size) {
+    final path = Path();
+    
+    // The path is defined within a 24x24 logical box (standard SVG size).
+    const double normalizer = 22.0;
+
+    final List<Offset> normalizedPoints = [
+      const Offset(12.00, 2.00),
+      const Offset(9.42, 8.66),
+      const Offset(2.00, 10.47),
+      const Offset(7.60, 15.34),
+      const Offset(6.18, 22.00),
+      const Offset(12.00, 18.50),
+      const Offset(17.82, 22.00),
+      const Offset(16.40, 15.34),
+      const Offset(22.00, 10.47),
+      const Offset(14.58, 8.66),
+    ].map((p) => Offset(p.dx / normalizer, p.dy / normalizer)).toList();
+
+    // The center of the normalized star for centering is roughly (0.5, 0.5)
+    final Offset centerOffset = Offset(0.5, 0.5); 
+    
+    // Start Path (M12 2)
+    path.moveTo(
+      (normalizedPoints[0].dx - centerOffset.dx) * size,
+      (normalizedPoints[0].dy - centerOffset.dy) * size,
+    );
+    
+    // Draw Lines (L)
+    for (int i = 1; i < normalizedPoints.length; i++) {
+      path.lineTo(
+        (normalizedPoints[i].dx - centerOffset.dx) * size,
+        (normalizedPoints[i].dy - centerOffset.dy) * size,
+      );
+    }
+
+    path.close(); // Close path (Z)
+    return path;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double scaleX = size.width / viewBox.width;
+    final double scaleY = size.height / viewBox.height;
+    
+    // Scale the canvas to fit the paths properly
+    canvas.scale(scaleX, scaleY); 
+
+    final path1 = _getPath1();
+    final path2 = _getPath2();
+
+    final ui.PathMetric m1 = path1.computeMetrics().first;
+    final ui.PathMetric m2 = path2.computeMetrics().first;
+
+    // Line drawing length
+    final double drawLen1 = m1.length * pathAnimation.value;
+    // Delayed line drawing length (0.3s delay equivalent for a 4s animation is 0.075 of the total value)
+    final double drawLen2 = m2.length * math.max(0.0, pathAnimation.value - 0.075);
+
+    // Stroke width needs to be inversely scaled to look consistent
+    final double strokeWidth = 3 / scaleX;
+
+    final paint1 = Paint()
+      ..color = const Color(0xFF3a9df8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+
+    final paint2 = Paint()
+      ..color = const Color(0xFF00f7ff)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth;
+    
+    // Draw the paths based on the animated length
+    canvas.drawPath(m1.extractPath(0, drawLen1), paint1);
+    canvas.drawPath(m2.extractPath(0, drawLen2), paint2);
+
+    // --- Moving star ---
+    if (starAnimation.value > 0.0) {
+      final starPath = _getCenterPath(); 
+      final ui.PathMetric starMetric = starPath.computeMetrics().first;
+      // Get position based on the animated value (using the smooth curve)
+      final double distance = starMetric.length * starAnimation.value; 
+      final ui.Tangent? tangent = starMetric.getTangentForOffset(distance);
+
+      if (tangent != null) {
+        // Star's desired size in logical pixels (unscaled)
+        const double desiredStarSize = 24.0;
+        
+        // --- Opacity Logic for Fade Out (Matches SVG keyTimes="0; 0.8; 1") ---
+        const double fadeStart = 0.8;
+        const double fadeEnd = 1.0;
+
+        double opacity = 1.0;
+        if (starAnimation.value > fadeStart) {
+            // Linearly interpolate opacity from 1.0 to 0.0 over the fade range
+            opacity = 1.0 - ((starAnimation.value - fadeStart) / (fadeEnd - fadeStart));
+        }
+        // Clamp the value to ensure it stays between 0.0 and 1.0
+        opacity = math.max(0.0, math.min(1.0, opacity)); 
+
+        canvas.save();
+        
+        // 1. Translate to the correct scaled position 
+        canvas.translate(tangent.position.dx, tangent.position.dy);
+        
+        // 2. Rotate to align with the path (The star should not be rotated as it is a smooth path)
+        // Removed rotation as the path is not jagged, keeping the star upright looks better for smooth curves.
+        
+        // 3. Temporarily UN-SCALE the canvas to draw a perfectly symmetrical star.
+        canvas.scale(1 / scaleX, 1 / scaleY);
+        
+        // 4. Create and draw the star at the fixed, unscaled size
+        final star = _createStarShape(desiredStarSize);
+        
+        // Use the calculated opacity
+        final starPaint = Paint()..color = Colors.white.withOpacity(opacity); 
+          
+        canvas.drawPath(star, starPaint);
+        
+        canvas.restore();
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant PathAnimationPainter oldDelegate) => true;
+}

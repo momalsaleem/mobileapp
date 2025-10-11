@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">In Navigation</string>
+    <string name="app_description">Indoor Navigation Assistant for Visually Impaired Users</string>
+    <string name="record_route">Record New Route</string>
+    <string name="navigate_route">Navigate Route</string>
+    <string name="my_routes">My Routes</string>
+    <string name="settings">Settings</string>
+    <string name="accessibility">Accessibility</string>
+    <string name="navigation">Navigation</string>
+    <string name="app_info">App</string>
+    <string name="data_management">Data</string>
+</resources>
