@@ -153,9 +153,9 @@
     },
     {
       "name": "meta",
-      "rootUri": "file:///C:/Users/SSC/AppData/Local/Pub/Cache/hosted/pub.dev/meta-1.17.0",
+      "rootUri": "file:///C:/Users/SSC/AppData/Local/Pub/Cache/hosted/pub.dev/meta-1.16.0",
       "packageUri": "lib/",
-      "languageVersion": "3.5"
+      "languageVersion": "2.12"
     },
     {
       "name": "path",
@@ -321,7 +321,7 @@
     },
     {
       "name": "test_api",
-      "rootUri": "file:///C:/Users/SSC/AppData/Local/Pub/Cache/hosted/pub.dev/test_api-0.7.7",
+      "rootUri": "file:///C:/Users/SSC/AppData/Local/Pub/Cache/hosted/pub.dev/test_api-0.7.6",
       "packageUri": "lib/",
       "languageVersion": "3.5"
     },
@@ -363,8 +363,8 @@
     }
   ],
   "generator": "pub",
-  "generatorVersion": "3.11.0-13.0.dev",
+  "generatorVersion": "3.9.2",
   "flutterRoot": "file:///C:/src/flutter",
-  "flutterVersion": "3.37.0-1.0.pre-510",
+  "flutterVersion": "3.35.6",
   "pubCache": "file:///C:/Users/SSC/AppData/Local/Pub/Cache"
 }
