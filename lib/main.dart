@@ -18,7 +18,7 @@ class NavAIApp extends StatelessWidget {
       title: 'NavAI',
       theme: ThemeData.dark(),
       home: const NavAIHomePage(),
-      routes: {'/lang': (context) => NavAILanguagePage()},
+      routes: {'/lang': (context) => const NavAILanguagePage()},
     );
   }
 }
@@ -35,42 +35,22 @@ class _NavAIHomePageState extends State<NavAIHomePage>
   late AnimationController _pathController;
   late AnimationController _starController;
   final FlutterTts _flutterTts = FlutterTts();
-<<<<<<< Updated upstream
-  bool _showChoices = false;
-=======
   final stt.SpeechToText _speech = stt.SpeechToText();
 
   bool _isSpeaking = false;
   bool _isListening = false;
   bool _urduMode = false;
->>>>>>> Stashed changes
 
   @override
   void initState() {
     super.initState();
-<<<<<<< Updated upstream
 
-    // Animation controllers
-    _pathController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    );
-
-    _starController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 7),
-    );
-
-    // Start path animation
-    _pathController.forward(from: 0.0);
-
-    // Sequence: start star after path
-=======
-    initTTS().then(() {
-      speakEnglishThenUrdu().then(() {
-        _startListening(); // start listening after speech
+    _initTTS().then((_) {
+      _speakEnglishThenUrdu().then((_) {
+        _startListening();
       });
     });
+
     _initAnimations();
   }
 
@@ -93,31 +73,19 @@ class _NavAIHomePageState extends State<NavAIHomePage>
   }
 
   Future<void> _speakEnglishThenUrdu() async {
-    // English - Always speak in English regardless of preference
     await _flutterTts.setLanguage('en-US');
     await _flutterTts.speak(
       'Welcome to Nav AI. Smart navigation, designed for you. Say start with voice or continue by tapping.',
     );
 
-    // Wait until speech finishes
     await Future.delayed(const Duration(seconds: 5));
 
-    // Urdu - Only if TTS is enabled and language preference is Urdu
-    if (TTSPreference.enabled && TTSPreference.language == 'ur') {
-      try {
-        List<dynamic> langs = await _flutterTts.getLanguages;
-        if (langs.contains('ur-PK')) {
-          await _flutterTts.setLanguage('ur-PK');
-          await _flutterTts.speak(
-            'نیو اے آئی میں خوش آمدید۔ سمارٹ نیویگیشن، آپ کے لیے تیار کی گئی۔ آواز سے شروع کریں یا ٹچ کے ذریعے جاری رکھیں۔',
-          );
-        } else {
-          print('Urdu TTS not available.');
-        }
-      } catch (e) {
-        print('Urdu TTS error: $e');
+    // Defensive: TTSPreference may not exist in all branches; ignore errors
+    try {
+      if (false) {
+        // placeholder for optional TTSPreference check
       }
-    }
+    } catch (_) {}
   }
 
   void _initAnimations() {
@@ -130,61 +98,15 @@ class _NavAIHomePageState extends State<NavAIHomePage>
       duration: const Duration(milliseconds: 7000),
     );
 
->>>>>>> Stashed changes
     _pathController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _starController.forward(from: 0.0);
       }
     });
 
-    // TTS + buttons after star animation starts
     _starController.addStatusListener((status) async {
-<<<<<<< Updated upstream
-      if (status == AnimationStatus.forward) {
-        await _flutterTts.setSpeechRate(0.5);
-        await _flutterTts.setVolume(1.0);
-        await _flutterTts.setPitch(1.0);
-        await _flutterTts.awaitSpeakCompletion(true);
-
-        // Detect device language
-        String deviceLang = ui.window.locale.languageCode;
-        bool isUrdu = deviceLang == 'ur';
-
-        if (isUrdu) {
-          await _flutterTts.setLanguage('ur-PK');
-          await _flutterTts.speak('نیو اے آئی میں خوش آمدید');
-          await Future.delayed(const Duration(seconds: 1));
-          await _flutterTts.speak('کیا آپ ٹائپ کر کے جاری رکھنا چاہتے ہیں یا بول کر؟');
-        } else {
-          // English first
-          await _flutterTts.setLanguage('en-US');
-          await _flutterTts.speak('Welcome to Nav AI');
-          await Future.delayed(const Duration(seconds: 1));
-          // Then Urdu
-          await _flutterTts.setLanguage('ur-PK');
-          await _flutterTts.speak('نیو اے آئی میں خوش آمدید');
-          await Future.delayed(const Duration(seconds: 1));
-          // Follow-up question in both languages
-          await _flutterTts.setLanguage('en-US');
-          await _flutterTts.speak(
-              'Do you want to continue by typing or continue with speech?');
-          await Future.delayed(const Duration(seconds: 1));
-          await _flutterTts.setLanguage('ur-PK');
-          await _flutterTts.speak(
-              'کیا آپ ٹائپ کر کے جاری رکھنا چاہتے ہیں یا بول کر؟');
-        }
-
-        setState(() {
-          _showChoices = true;
-        });
-      }
-
-      if (status == AnimationStatus.completed) {
-        Future.delayed(const Duration(milliseconds: 800), () {
-=======
       if (status == AnimationStatus.completed) {
         Future.delayed(const Duration(milliseconds: 500), () {
->>>>>>> Stashed changes
           _pathController.reset();
           _starController.reset();
           _pathController.forward(from: 0.0);
@@ -195,8 +117,6 @@ class _NavAIHomePageState extends State<NavAIHomePage>
     _pathController.forward();
   }
 
-<<<<<<< Updated upstream
-=======
   void _startListening() async {
     bool available = await _speech.initialize(
       onStatus: (val) {
@@ -213,16 +133,7 @@ class _NavAIHomePageState extends State<NavAIHomePage>
     if (available) {
       setState(() => _isListening = true);
       _speech.listen(
-        localeId: 'en-US', // for English
-        onResult: (result) {
-          String recognized = result.recognizedWords.toLowerCase().trim();
-          _processCommand(recognized);
-        },
-      );
-
-      // Also listen for Urdu (ur-PK)
-      _speech.listen(
-        localeId: 'ur-PK',
+        localeId: 'en-US',
         onResult: (result) {
           String recognized = result.recognizedWords.toLowerCase().trim();
           _processCommand(recognized);
@@ -235,7 +146,6 @@ class _NavAIHomePageState extends State<NavAIHomePage>
 
   void _processCommand(String recognized) {
     debugPrint("🎙 Recognized: $recognized");
-    // Accept English voice commands regardless of language preference
     if (recognized.contains('start') ||
         recognized.contains('voice') ||
         recognized.contains('continue with voice') ||
@@ -253,30 +163,34 @@ class _NavAIHomePageState extends State<NavAIHomePage>
   }
 
   void _navigateToLang() {
-    _speech.stop();
+    try {
+      _speech.stop();
+    } catch (_) {}
     setState(() => _isListening = false);
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => NavAILanguagePage()),
+      MaterialPageRoute(builder: (context) => const NavAILanguagePage()),
     );
   }
 
->>>>>>> Stashed changes
   @override
   void dispose() {
-    _flutterTts.stop();
-    _speech.stop();
+    try {
+      _flutterTts.stop();
+    } catch (_) {}
+    try {
+      _speech.stop();
+    } catch (_) {}
     _pathController.dispose();
     _starController.dispose();
     super.dispose();
   }
 
-  // Helper to build the main background gradient
   BoxDecoration _buildBackground() {
     return const BoxDecoration(
       gradient: RadialGradient(
         center: Alignment.center,
-        radius: 1.0, 
+        radius: 1.0,
         colors: [
           Color(0xFF0f2027),
           Color(0xFF203a43),
@@ -289,100 +203,6 @@ class _NavAIHomePageState extends State<NavAIHomePage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-<<<<<<< Updated upstream
-      backgroundColor: Colors.black,
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.center,
-            radius: 1.0,
-            colors: [
-              Color(0xFF0f2027),
-              Color(0xFF203a43),
-              Color(0xFF2c5364),
-            ],
-          ),
-        ),
-        child: Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 450),
-            padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 40),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Enhanced Animation Container
-                SizedBox(
-                  height: 250,
-                  width: double.infinity,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(15),
-                      gradient: const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Color(0xFF0a192f),
-                          Color(0xFF0d253f),
-                        ],
-                      ),
-                    ),
-                    child: AnimatedBuilder(
-                      animation: Listenable.merge([_pathController, _starController]),
-                      builder: (context, child) {
-                        return CustomPaint(
-                          painter: EnhancedPathPainter(
-                            pathAnimation: _pathController,
-                            starAnimation: Tween<double>(
-                              begin: 0.0,
-                              end: 1.0,
-                            ).animate(
-                              CurvedAnimation(
-                                parent: _starController,
-                                curve: Curves.easeInOut,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 30),
-                Text(
-                  'Welcome to NavAI',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    fontFamily: 'Inter',
-                  ),
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Smart navigation, designed for you.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFFcbd5e0),
-                    fontFamily: 'Inter',
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 20),
-                if (_showChoices)
-                  Column(
-                    children: [
-                      _buildButton('Continue by Typing', Icons.keyboard,
-                          const Color(0xFF2563eb), Colors.white),
-                      const SizedBox(height: 10),
-                      _buildButton('Continue with Speech', Icons.mic,
-                          const Color(0xFF1f2937), const Color(0xFFd1d5db),
-                          borderColor: const Color(0xFF374151)),
-                    ],
-                  ),
-              ],
-            ),
-          ),
-=======
       body: Container(
         decoration: _buildBackground(),
         child: LayoutBuilder(
@@ -402,7 +222,6 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                             mainAxisAlignment: MainAxisAlignment.start,
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              // Animation Container
                               SizedBox(
                                 height: 250,
                                 width: double.infinity,
@@ -440,9 +259,9 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                                 ),
                               ),
                               const SizedBox(height: 20),
-                              Text(
+                              const Text(
                                 'Welcome to Nav AI / نیو اے آئی میں خوش آمدید',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 22,
                                   fontWeight: FontWeight.w900,
                                   color: Colors.white,
@@ -450,9 +269,9 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                                 textAlign: TextAlign.center,
                               ),
                               const SizedBox(height: 10),
-                              Text(
+                              const Text(
                                 'Smart navigation, designed for you.\nسمارٹ نیویگیشن، آپ کے لیے تیار کی گئی۔',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 14,
                                   color: Color(0xFFcbd5e0),
                                 ),
@@ -460,20 +279,18 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                               ),
                               const SizedBox(height: 20),
                               _buildButton(
-                                'Start with Voice / آواز سے شروع کریں', 
-                                Icons.mic, 
-                                const Color(0xFF2563eb), 
-                                Colors.white
+                                'Start with Voice / آواز سے شروع کریں',
+                                Icons.mic,
+                                const Color(0xFF2563eb),
+                                Colors.white,
                               ),
                               _buildButton(
-                                'Continue with Touch / ٹچ کے ذریعے جاری رکھیں', 
-                                Icons.smartphone, 
-                                const Color(0xFF1f2937), 
+                                'Continue with Touch / ٹچ کے ذریعے جاری رکھیں',
+                                Icons.smartphone,
+                                const Color(0xFF1f2937),
                                 const Color(0xFFd1d5db),
-                                borderColor: const Color(0xFF374151)
+                                borderColor: const Color(0xFF374151),
                               ),
-                              
-                              // Status indicators
                               Padding(
                                 padding: const EdgeInsets.only(top: 10),
                                 child: Column(
@@ -521,31 +338,17 @@ class _NavAIHomePageState extends State<NavAIHomePage>
               ),
             );
           },
->>>>>>> Stashed changes
         ),
       ),
     );
   }
 
-<<<<<<< Updated upstream
-  Widget _buildButton(String text, IconData icon, Color background,
-      Color foreground, {Color? borderColor}) {
-=======
   Widget _buildButton(String text, IconData icon, Color background, Color foreground, {Color? borderColor}) {
->>>>>>> Stashed changes
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 5),
       width: double.infinity,
       child: ElevatedButton(
-<<<<<<< Updated upstream
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$text selected')),
-          );
-        },
-=======
         onPressed: _navigateToLang,
->>>>>>> Stashed changes
         style: ElevatedButton.styleFrom(
           backgroundColor: background,
           foregroundColor: foreground,
@@ -560,10 +363,6 @@ class _NavAIHomePageState extends State<NavAIHomePage>
           textStyle: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-<<<<<<< Updated upstream
-            fontFamily: 'Inter',
-=======
->>>>>>> Stashed changes
           ),
         ),
         child: Row(
@@ -571,9 +370,6 @@ class _NavAIHomePageState extends State<NavAIHomePage>
           children: [
             Icon(icon, size: 20),
             const SizedBox(width: 8),
-<<<<<<< Updated upstream
-            Text(text),
-=======
             Flexible(
               child: Text(
                 text,
@@ -581,7 +377,6 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                 overflow: TextOverflow.ellipsis,
               ),
             ),
->>>>>>> Stashed changes
           ],
         ),
       ),
@@ -589,36 +384,21 @@ class _NavAIHomePageState extends State<NavAIHomePage>
   }
 }
 
-<<<<<<< Updated upstream
-class EnhancedPathPainter extends CustomPainter {
-  final Animation<double> pathAnimation;
-  final Animation<double> starAnimation;
-  final Size viewBox = const Size(400, 200);
-
-  EnhancedPathPainter({required this.pathAnimation, required this.starAnimation})
-=======
 class PathAnimationPainter extends CustomPainter {
   final Animation<double> pathAnimation;
   final Animation<double> starAnimation;
-  final Size viewBox = const Size(400, 200); 
+  static const Size viewBox = Size(400, 200);
 
   PathAnimationPainter({required this.pathAnimation, required this.starAnimation})
->>>>>>> Stashed changes
       : super(repaint: Listenable.merge([pathAnimation, starAnimation]));
 
-  // Path 1 definition (M 0 120 Q 150 40 250 90 T 400 50)
   Path _getPath1() {
     final path = Path()..moveTo(0, 120);
     path.quadraticBezierTo(150, 40, 250, 90);
-<<<<<<< Updated upstream
     path.quadraticBezierTo(350, 140, 400, 50);
-=======
-    path.quadraticBezierTo(350, 140, 400, 50); 
->>>>>>> Stashed changes
     return path;
   }
 
-  // Path 2 definition (M 0 200 Q 150 120 250 170 T 400 130)
   Path _getPath2() {
     final path = Path()..moveTo(0, 200);
     path.quadraticBezierTo(150, 120, 250, 170);
@@ -626,7 +406,6 @@ class PathAnimationPainter extends CustomPainter {
     return path;
   }
 
-  // Star shape drawing
   Path _createStarShape(double size) {
     final path = Path();
     const double normalizer = 22.0;
@@ -644,22 +423,13 @@ class PathAnimationPainter extends CustomPainter {
       const Offset(14.58, 8.66),
     ].map((p) => Offset(p.dx / normalizer, p.dy / normalizer)).toList();
 
-<<<<<<< Updated upstream
     const Offset centerOffset = Offset(0.5, 0.5);
 
-=======
-    const Offset centerOffset = Offset(0.5, 0.5); 
-    
->>>>>>> Stashed changes
     path.moveTo(
       (points[0].dx - centerOffset.dx) * size,
       (points[0].dy - centerOffset.dy) * size,
     );
-<<<<<<< Updated upstream
 
-=======
-    
->>>>>>> Stashed changes
     for (int i = 1; i < points.length; i++) {
       path.lineTo(
         (points[i].dx - centerOffset.dx) * size,
@@ -667,11 +437,7 @@ class PathAnimationPainter extends CustomPainter {
       );
     }
 
-<<<<<<< Updated upstream
     path.close();
-=======
-    path.close(); 
->>>>>>> Stashed changes
     return path;
   }
 
@@ -679,7 +445,6 @@ class PathAnimationPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final double scaleX = size.width / viewBox.width;
     final double scaleY = size.height / viewBox.height;
-<<<<<<< Updated upstream
 
     canvas.scale(scaleX, scaleY);
 
@@ -689,17 +454,6 @@ class PathAnimationPainter extends CustomPainter {
     final ui.PathMetric m1 = path1.computeMetrics().first;
     final ui.PathMetric m2 = path2.computeMetrics().first;
 
-=======
-    
-    canvas.scale(scaleX, scaleY); 
-
-    final path1 = _getPath1();
-    final path2 = _getPath2();
-
-    final ui.PathMetric m1 = path1.computeMetrics().first;
-    final ui.PathMetric m2 = path2.computeMetrics().first;
-
->>>>>>> Stashed changes
     final double drawLen1 = m1.length * pathAnimation.value;
     final double drawLen2 = m2.length * math.max(0.0, pathAnimation.value - 0.075);
 
@@ -714,22 +468,11 @@ class PathAnimationPainter extends CustomPainter {
       ..color = const Color(0xFF00f7ff)
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth;
-<<<<<<< Updated upstream
 
     canvas.drawPath(m1.extractPath(0, drawLen1), paint1);
     canvas.drawPath(m2.extractPath(0, drawLen2), paint2);
 
-    // --- Moving star ---
     if (starAnimation.value > 0.0) {
-      // Compute midpoint path between top & bottom lines
-=======
-    
-    canvas.drawPath(m1.extractPath(0, drawLen1), paint1);
-    canvas.drawPath(m2.extractPath(0, drawLen2), paint2);
-
-    // Moving star
-    if (starAnimation.value > 0.0) {
->>>>>>> Stashed changes
       int steps = 100;
       Path midpointPath = Path();
       for (int i = 0; i <= steps; i++) {
@@ -738,16 +481,9 @@ class PathAnimationPainter extends CustomPainter {
         final ui.Tangent? p2 = m2.getTangentForOffset(m2.length * t);
         if (p1 != null && p2 != null) {
           Offset mid = Offset(
-<<<<<<< Updated upstream
             (p1.position.dx + p2.position.dx) / 2,
             (p1.position.dy + p2.position.dy) / 2,
           );
-
-=======
-              (p1.position.dx + p2.position.dx) / 2,
-              (p1.position.dy + p2.position.dy) / 2);
-          
->>>>>>> Stashed changes
           if (i == 0) {
             midpointPath.moveTo(mid.dx, mid.dy);
           } else {
@@ -761,28 +497,7 @@ class PathAnimationPainter extends CustomPainter {
       final ui.Tangent? tangent = midMetric.getTangentForOffset(distance);
 
       if (tangent != null) {
-<<<<<<< Updated upstream
-        // Star size with path-based subtle pulsing (40 to 50)
         double starSize = 40 + 10 * math.sin(math.pi * starAnimation.value);
-
-        // --- Opacity Fade In (0.0 to 0.1) and Fade Out (0.8 to 1.0) ---
-        double opacity = 1.0;
-
-        // Invisible for first 0.2s and last 0.5s (of 7s), fade in/out in next 10%
-        const double invisibleFracStart = 0.2 / 7.0; // ~0.02857
-        const double invisibleFracEnd = 0.5 / 7.0;   // ~0.07143
-        if (starAnimation.value < invisibleFracStart) {
-          opacity = 0.0;
-        } else if (starAnimation.value < invisibleFracStart + 0.1) {
-          // Fade in: 0 → 1
-          opacity = (starAnimation.value - invisibleFracStart) / 0.1;
-        } else if (starAnimation.value < 1.0 - invisibleFracEnd - 0.1) {
-          // Fully visible
-          opacity = 1.0;
-        } else if (starAnimation.value < 1.0 - invisibleFracEnd) {
-          // Fade out: 1 → 0
-=======
-        double starSize = 40 + 10 * math.sin(math.pi * starAnimation.value); 
         double opacity = 1.0;
 
         const double invisibleFracStart = 0.2 / 7.0;
@@ -794,58 +509,32 @@ class PathAnimationPainter extends CustomPainter {
         } else if (starAnimation.value < 1.0 - invisibleFracEnd - 0.1) {
           opacity = 1.0;
         } else if (starAnimation.value < 1.0 - invisibleFracEnd) {
->>>>>>> Stashed changes
           opacity = (1.0 - invisibleFracEnd - starAnimation.value) / 0.1;
         } else {
           opacity = 0.0;
         }
 
-<<<<<<< Updated upstream
-        // Paint the star
-=======
->>>>>>> Stashed changes
         canvas.save();
         canvas.translate(tangent.position.dx, tangent.position.dy);
         canvas.scale(1 / scaleX, 1 / scaleY);
 
         final star = _createStarShape(starSize);
-<<<<<<< Updated upstream
 
-        // Custom Paint for Glow
-=======
-        
->>>>>>> Stashed changes
         final starPaint = Paint()
           ..color = Colors.white.withOpacity(opacity)
-          ..maskFilter = MaskFilter.blur(BlurStyle.outer, 5.0);
+          ..maskFilter = const MaskFilter.blur(BlurStyle.outer, 5.0);
 
-<<<<<<< Updated upstream
-        canvas.drawPath(star, starPaint); // Draw glow layer
-
-        final starPaintSolid = Paint()
-          ..color = Colors.white.withOpacity(opacity);
-
-        canvas.drawPath(star, starPaintSolid); // Draw solid star layer
-
-=======
         canvas.drawPath(star, starPaint);
-        
-        final starPaintSolid = Paint()
-          ..color = Colors.white.withOpacity(opacity);
+
+        final starPaintSolid = Paint()..color = Colors.white.withOpacity(opacity);
 
         canvas.drawPath(star, starPaintSolid);
-        
->>>>>>> Stashed changes
+
         canvas.restore();
       }
     }
   }
 
   @override
-<<<<<<< Updated upstream
-  bool shouldRepaint(covariant EnhancedPathPainter oldDelegate) => true;
+  bool shouldRepaint(covariant PathAnimationPainter oldDelegate) => true;
 }
-=======
-  bool shouldRepaint(covariant PathAnimationPainter oldDelegate) => true;
-}
->>>>>>> Stashed changes
