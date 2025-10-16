@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:nav_aif_fyp/pages/page_two.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 class NameInputPage extends StatefulWidget {
   const NameInputPage({super.key});
@@ -12,21 +13,87 @@ class NameInputPage extends StatefulWidget {
 
 class _NameInputPageState extends State<NameInputPage> {
   final FlutterTts _tts = FlutterTts();
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  final TextEditingController _nameController = TextEditingController();
+  bool _isListening = false;
 
-  String get _instructionText =>
-      TTSPreference.language == 'ur'
-          ? 'NavAI آپ کو کیا پکارے؟'
-          : 'What should NavAI call you?';
+  String get _instructionText => 'What should NavAI call you? You can say your name or type it in the text field.';
 
   @override
   void initState() {
     super.initState();
-    if (TTSPreference.enabled) {
-      final lang = TTSPreference.language == 'ur' ? 'ur-PK' : 'en-US';
-      _tts.setLanguage(lang);
-      _tts.setSpeechRate(0.5);
-      _tts.speak(_instructionText);
+    _initTTS();
+    _startListening();
+  }
+
+  Future<void> _initTTS() async {
+    // Always speak in English
+    _tts.setLanguage('en-US');
+    _tts.setSpeechRate(0.5);
+    _tts.speak(_instructionText);
+  }
+
+  void _startListening() async {
+    bool available = await _speech.initialize(
+      onStatus: (val) {
+        if (val == "done" && !_isListening) {
+          _startListening();
+        }
+      },
+      onError: (val) {
+        debugPrint('Speech Error: $val');
+        setState(() => _isListening = false);
+      },
+    );
+
+    if (available) {
+      setState(() => _isListening = true);
+      _speech.listen(
+        localeId: 'en-US',
+        onResult: (result) {
+          String recognized = result.recognizedWords.toLowerCase().trim();
+          _processCommand(recognized);
+        },
+      );
+    } else {
+      setState(() => _isListening = false);
     }
+  }
+
+  void _processCommand(String recognized) {
+    debugPrint("🎙 Name Input Recognized: $recognized");
+    
+    // If user says their name, set it in the text field and navigate
+    if (recognized.isNotEmpty && !recognized.contains('continue') && !recognized.contains('next')) {
+      _speech.stop();
+      setState(() {
+        _isListening = false;
+        _nameController.text = recognized; // Set the recognized name
+      });
+      
+      // Speak confirmation and navigate after a short delay
+      _tts.speak('Hello $recognized. Moving to location selection.');
+      Future.delayed(const Duration(seconds: 2), () {
+        _navigateToNext();
+      });
+    }
+  }
+
+  void _navigateToNext() {
+    if (mounted) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => const UseLocationPage(),
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _speech.stop();
+    _nameController.dispose();
+    super.dispose();
   }
 
   @override
@@ -80,6 +147,7 @@ class _NameInputPageState extends State<NameInputPage> {
                   Stack(
                     children: [
                       TextField(
+                        controller: _nameController,
                         decoration: InputDecoration(
                           hintText: "Your name",
                           filled: true,
@@ -109,17 +177,49 @@ class _NameInputPageState extends State<NameInputPage> {
                         top: 0,
                         bottom: 0,
                         child: IconButton(
-                          onPressed: () {},
-                          icon: const Icon(
-                            Icons.mic,
-                            color: Color(0xFF9DA4B9),
+                          onPressed: () {
+                            if (_isListening) {
+                              _speech.stop();
+                              setState(() => _isListening = false);
+                            } else {
+                              _startListening();
+                            }
+                          },
+                          icon: Icon(
+                            _isListening ? Icons.mic : Icons.mic_none,
+                            color: _isListening ? Colors.red : Color(0xFF9DA4B9),
                             size: 28,
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 16),
+                  // Voice input indicator
+                  if (_isListening)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.red, width: 1),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.mic, size: 16, color: Colors.red[300]),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Listening for your name...',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.red[300],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 16),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF1349EC),
@@ -129,11 +229,7 @@ class _NameInputPageState extends State<NameInputPage> {
                       ),
                     ),
                     onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const UseLocationPage(),
-                        ),
-                      );
+                      _navigateToNext();
                     },
                     child: const Text(
                       "Save & Continue",

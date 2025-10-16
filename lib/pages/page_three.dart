@@ -15,20 +15,15 @@ class GuidePageBody extends StatefulWidget {
 class _GuidePageBodyState extends State<GuidePageBody> {
   final FlutterTts _tts = FlutterTts();
 
-  String get _instructionText =>
-      TTSPreference.language == 'ur'
-          ? 'براہ کرم اپنی رہنمائی کا طریقہ منتخب کریں۔'
-          : 'Select your preferred navigation mode.';
+  String get _instructionText => 'Select your preferred navigation mode.';
 
   @override
   void initState() {
     super.initState();
-    if (TTSPreference.enabled) {
-      final lang = TTSPreference.language == 'ur' ? 'ur-PK' : 'en-US';
-      _tts.setLanguage(lang);
-      _tts.setSpeechRate(0.5);
-      _tts.speak(_instructionText);
-    }
+    // Always speak in English
+    _tts.setLanguage('en-US');
+    _tts.setSpeechRate(0.5);
+    _tts.speak(_instructionText);
   }
   int _selectedIndex = 1; // Default to 'Voice + Haptic'
 

@@ -3,6 +3,7 @@ import 'package:nav_aif_fyp/pages/settings.dart';
 import 'package:nav_aif_fyp/pages/profile.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -13,23 +14,77 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final FlutterTts _tts = FlutterTts();
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _isListening = false;
 
-  String get _instructionText =>
-      TTSPreference.language == 'ur'
-          ? 'ڈیش بورڈ میں خوش آمدید۔ جاری رکھنے کے لیے ایک فیچر منتخب کریں۔'
-          : 'Welcome to your dashboard. Select a feature to continue.';
+  String get _instructionText => 'Welcome to your dashboard. Select a feature to continue. Say settings or profile to navigate.';
 
   @override
   void initState() {
     super.initState();
     _backPressCount = 0; // show the back button when screen opens
-    if (TTSPreference.enabled) {
-      final lang = TTSPreference.language == 'ur' ? 'ur-PK' : 'en-US';
-      _tts.setLanguage(lang);
-      _tts.setSpeechRate(0.5);
-      _tts.speak(_instructionText);
+    _initTTS();
+    _startListening();
+  }
+
+  Future<void> _initTTS() async {
+    // Always speak in English
+    _tts.setLanguage('en-US');
+    _tts.setSpeechRate(0.5);
+    _tts.speak(_instructionText);
+  }
+
+  void _startListening() async {
+    bool available = await _speech.initialize(
+      onStatus: (val) {
+        if (val == "done" && !_isListening) {
+          _startListening();
+        }
+      },
+      onError: (val) {
+        debugPrint('Speech Error: $val');
+        setState(() => _isListening = false);
+      },
+    );
+
+    if (available) {
+      setState(() => _isListening = true);
+      _speech.listen(
+        localeId: 'en-US',
+        onResult: (result) {
+          String recognized = result.recognizedWords.toLowerCase().trim();
+          _processCommand(recognized);
+        },
+      );
+    } else {
+      setState(() => _isListening = false);
     }
   }
+
+  void _processCommand(String recognized) {
+    debugPrint("🎙 Dashboard Recognized: $recognized");
+    
+    if (recognized.contains('settings')) {
+      _speech.stop();
+      setState(() => _isListening = false);
+      _tts.speak('Opening settings.');
+      Future.delayed(const Duration(seconds: 1), () {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const SettingsPage()),
+        );
+      });
+    } else if (recognized.contains('profile')) {
+      _speech.stop();
+      setState(() => _isListening = false);
+      _tts.speak('Opening profile.');
+      Future.delayed(const Duration(seconds: 1), () {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const ProfileScreen()),
+        );
+      });
+    }
+  }
+
   int? _hoveredIndex;
   int _backPressCount = 0;
 
@@ -184,17 +239,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: GridView.count(
-          crossAxisCount: 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          children: List.generate(cards.length, (index) {
-            final card = cards[index];
-            return _buildCard(index, card['icon'], card['title'], card['subtitle']);
-          }),
-        ),
+      body: Column(
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: GridView.count(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                children: List.generate(cards.length, (index) {
+                  final card = cards[index];
+                  return _buildCard(index, card['icon'], card['title'], card['subtitle']);
+                }),
+              ),
+            ),
+          ),
+          // Voice command indicator
+          if (_isListening)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.green, width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.mic, size: 16, color: Colors.green[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Listening... Say "settings" or "profile"',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.green[300],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -211,5 +297,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _speech.stop();
+    super.dispose();
   }
 }

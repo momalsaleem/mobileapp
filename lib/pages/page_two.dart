@@ -3,6 +3,7 @@ import 'package:nav_aif_fyp/pages/page_three.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 void main() {
   runApp(const NavAIApp());
@@ -28,22 +29,92 @@ class UseLocationPage extends StatefulWidget {
 
 class _UseLocationPageState extends State<UseLocationPage> {
   final FlutterTts _tts = FlutterTts();
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _isListening = false;
 
-  String get _instructionText =>
-      TTSPreference.language == 'ur'
-          ? 'آپ اس وقت کہاں ہیں؟ براہ کرم اپنی لوکیشن منتخب کریں۔'
-          : 'Where are you right now? Please select your location.';
+  String get _instructionText => 'Where are you right now? Please select your location. Say home, work, college, or university.';
 
   @override
   void initState() {
     super.initState();
-    if (TTSPreference.enabled) {
-      final lang = TTSPreference.language == 'ur' ? 'ur-PK' : 'en-US';
-      _tts.setLanguage(lang);
-      _tts.setSpeechRate(0.5);
-      _tts.speak(_instructionText);
+    _initTTS();
+    _startListening();
+  }
+
+  Future<void> _initTTS() async {
+    // Always speak in English
+    _tts.setLanguage('en-US');
+    _tts.setSpeechRate(0.5);
+    _tts.speak(_instructionText);
+  }
+
+  void _startListening() async {
+    bool available = await _speech.initialize(
+      onStatus: (val) {
+        if (val == "done" && !_isListening) {
+          _startListening();
+        }
+      },
+      onError: (val) {
+        debugPrint('Speech Error: $val');
+        setState(() => _isListening = false);
+      },
+    );
+
+    if (available) {
+      setState(() => _isListening = true);
+      _speech.listen(
+        localeId: 'en-US',
+        onResult: (result) {
+          String recognized = result.recognizedWords.toLowerCase().trim();
+          _processCommand(recognized);
+        },
+      );
+    } else {
+      setState(() => _isListening = false);
     }
   }
+
+  void _processCommand(String recognized) {
+    debugPrint("🎙 Location Selection Recognized: $recognized");
+    
+    int? selectedIndex;
+    
+    if (recognized.contains('home')) {
+      selectedIndex = 0;
+    } else if (recognized.contains('work')) {
+      selectedIndex = 1;
+    } else if (recognized.contains('college')) {
+      selectedIndex = 2;
+    } else if (recognized.contains('university')) {
+      selectedIndex = 3;
+    }
+
+    if (selectedIndex != null) {
+      _selectLocationAndNavigate(selectedIndex);
+    }
+  }
+
+  void _selectLocationAndNavigate(int index) async {
+    _speech.stop();
+    setState(() {
+      _isListening = false;
+      _selectedIndex = index;
+    });
+
+    String location = options[index]['label'];
+    
+    // Speak confirmation and navigate after a short delay
+    _tts.speak('You selected $location. Moving to navigation mode selection.');
+    await Future.delayed(const Duration(seconds: 2));
+    
+    if (mounted) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (context) => const GuidePageBody()),
+      );
+    }
+  }
+
   int? _hoveredIndex;
   int? _selectedIndex;
 
@@ -84,6 +155,31 @@ class _UseLocationPageState extends State<UseLocationPage> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
+            // Voice command indicator
+            if (_isListening)
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.green, width: 1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.mic, size: 16, color: Colors.green[300]),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Listening... Say "home", "work", "college", or "university"',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green[300],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(
               child: ListView.separated(
                 itemCount: options.length,
@@ -95,10 +191,8 @@ class _UseLocationPageState extends State<UseLocationPage> {
                     onEnter: (_) => setState(() => _hoveredIndex = index),
                     onExit: (_) => setState(() => _hoveredIndex = null),
                     child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _selectedIndex = index;
-                        });
+                      onTap: () async {
+                        await _selectLocationAndNavigate(index);
                       },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
@@ -144,10 +238,8 @@ class _UseLocationPageState extends State<UseLocationPage> {
                 ),
               ),
               onPressed: _selectedIndex != null
-                  ? () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (context) => const GuidePageBody()),
-                      );
+                  ? () async {
+                      await _selectLocationAndNavigate(_selectedIndex!);
                     }
                   : null,
               child: const Text('Continue', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
@@ -156,5 +248,11 @@ class _UseLocationPageState extends State<UseLocationPage> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _speech.stop();
+    super.dispose();
   }
 }
