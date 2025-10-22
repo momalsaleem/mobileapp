@@ -1,16 +1,12 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:nav_aif_fyp/pages/page_one.dart';
-import 'package:nav_aif_fyp/main.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
-// Global TTS preference
 class TTSPreference {
   static bool enabled = false;
-  static String language = 'en'; // 'en' or 'ur'
+  static String language = 'en';
 }
-
 
 class NavAILanguagePage extends StatelessWidget {
   const NavAILanguagePage({super.key});
@@ -20,16 +16,19 @@ class NavAILanguagePage extends StatelessWidget {
     return const LanguageSelectionScreen();
   }
 }
+
 class LanguageSelectionScreen extends StatefulWidget {
   const LanguageSelectionScreen({super.key});
 
   @override
-  State<LanguageSelectionScreen> createState() => _LanguageSelectionScreenState();
+  State<LanguageSelectionScreen> createState() =>
+      _LanguageSelectionScreenState();
 }
 
 class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
   final FlutterTts flutterTts = FlutterTts();
   final stt.SpeechToText _speech = stt.SpeechToText();
+
   String selectedLanguage = "English";
   bool _isListening = false;
 
@@ -44,13 +43,13 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
     await flutterTts.setLanguage("en-US");
     await flutterTts.setSpeechRate(0.5);
     await flutterTts.setPitch(1.0);
-
-    // Always speak in English when page loads
-    await flutterTts.speak("Select your language. Say 'urdu' for Urdu interface, or 'bilingual' for both languages with voice assistance.");
+    await flutterTts.speak(
+      "Select your language. Say Urdu for Urdu interface, or Bilingual for both languages with voice assistance.",
+    );
   }
 
-  void _startListening() async {
-    bool available = await _speech.initialize(
+  void _startListening() {
+    _speech.initialize(
       onStatus: (val) {
         if (val == "done" && !_isListening) {
           _startListening();
@@ -60,25 +59,24 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
         debugPrint('Speech Error: $val');
         setState(() => _isListening = false);
       },
-    );
-
-    if (available) {
-      setState(() => _isListening = true);
-      _speech.listen(
-        localeId: 'en-US',
-        onResult: (result) {
-          String recognized = result.recognizedWords.toLowerCase().trim();
-          _processCommand(recognized);
-        },
-      );
-    } else {
-      setState(() => _isListening = false);
-    }
+    ).then((available) {
+      if (available) {
+        setState(() => _isListening = true);
+        _speech.listen(
+          localeId: 'en-US',
+          onResult: (result) {
+            String recognized = result.recognizedWords.toLowerCase().trim();
+            _processCommand(recognized);
+          },
+        );
+      } else {
+        setState(() => _isListening = false);
+      }
+    });
   }
 
   void _processCommand(String recognized) {
-    debugPrint("🎙 Language Selection Recognized: $recognized");
-    
+    debugPrint("🎙 Recognized: $recognized");
     if (recognized.contains('urdu')) {
       _selectLanguageAndNavigate("Urdu");
     } else if (recognized.contains('bilingual')) {
@@ -86,12 +84,12 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
     }
   }
 
-  void _selectLanguageAndNavigate(String language) async {
+  void _selectLanguageAndNavigate(String language) {
     _speech.stop();
     setState(() {
       _isListening = false;
       selectedLanguage = language;
-      
+
       if (language == "Bilingual") {
         TTSPreference.enabled = true;
         TTSPreference.language = 'en';
@@ -104,45 +102,31 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
       }
     });
 
-    // Speak confirmation and navigate
-    await _speakSelection(language);
-    await Future.delayed(const Duration(seconds: 2)); // Wait for speech to complete
-    
-    if (mounted) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => const NameInputPage(),
-        ),
-      );
-    }
-  }
-
-  Future<void> _speakLanguages() async {
-    // Speak both options — in English and Urdu
-    await flutterTts.speak("Select your language. Urdu, or Bilingual.");
-    await Future.delayed(const Duration(seconds: 3));
-    await flutterTts.setLanguage("ur-PK");
-    await flutterTts.speak("اپنی زبان منتخب کریں۔ اردو یا دو لسانی۔");
-    await flutterTts.setLanguage("en-US"); // Reset to English
+    _speakSelection(language).then((_) {
+      Future.delayed(const Duration(seconds: 2)).then((_) {
+        if (mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (context) => const NameInputPage()),
+          );
+        }
+      });
+    });
   }
 
   Future<void> _speakSelection(String language) async {
-    // Always respond in English
     await flutterTts.setLanguage("en-US");
-    
     if (language == "Urdu") {
       await flutterTts.speak("You selected Urdu language interface.");
     } else if (language == "Bilingual") {
-      await flutterTts.speak("You selected Bilingual mode with voice assistance enabled.");
+      await flutterTts
+          .speak("You selected Bilingual mode with voice assistance enabled.");
     }
   }
 
   Widget _buildLanguageOption(String language) {
     final bool isSelected = selectedLanguage == language;
     return GestureDetector(
-      onTap: () async {
-        await _selectLanguageAndNavigate(language);
-      },
+      onTap: () => _selectLanguageAndNavigate(language),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
@@ -169,10 +153,7 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
               value: language,
               groupValue: selectedLanguage,
               onChanged: (value) {
-                setState(() {
-                  selectedLanguage = value!;
-                });
-                _speakSelection(language);
+                if (value != null) _selectLanguageAndNavigate(value);
               },
               activeColor: const Color(0xFF1349EC),
             ),
@@ -189,7 +170,6 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Row(
@@ -197,7 +177,8 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
                   IconButton(
                     icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
                     onPressed: () {
-                      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                      Navigator.of(context)
+                          .pushNamedAndRemoveUntil('/', (route) => false);
                     },
                   ),
                   const Expanded(
@@ -215,8 +196,6 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
                 ],
               ),
             ),
-
-            // Language Options
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -227,10 +206,10 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
                     const SizedBox(height: 12),
                     _buildLanguageOption("Bilingual"),
                     const SizedBox(height: 20),
-                    // Voice command indicator
                     if (_isListening)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
                           color: Colors.green.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(20),
@@ -238,14 +217,15 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.mic, size: 16, color: Colors.green[300]),
-                            const SizedBox(width: 8),
+                          children: const [
+                            Icon(Icons.mic,
+                                size: 16, color: Colors.greenAccent),
+                            SizedBox(width: 8),
                             Text(
-                              'Listening... Say "urdu" or "bilingual"',
+                              'Listening... Say "Urdu" or "Bilingual"',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.green[300],
+                                color: Colors.greenAccent,
                               ),
                             ),
                           ],
@@ -255,8 +235,6 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
                 ),
               ),
             ),
-
-            // Save Button
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
               child: SizedBox(
@@ -269,8 +247,8 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  onPressed: () async {
-                    await _selectLanguageAndNavigate(selectedLanguage);
+                  onPressed: () {
+                    _selectLanguageAndNavigate(selectedLanguage);
                   },
                   child: const Text(
                     "Save",

@@ -1,9 +1,8 @@
-
 import 'package:flutter/material.dart';
-import 'package:nav_aif_fyp/pages/page_four.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:nav_aif_fyp/pages/page_four.dart';
 
 class GuidePageBody extends StatefulWidget {
   const GuidePageBody({super.key});
@@ -14,18 +13,10 @@ class GuidePageBody extends StatefulWidget {
 
 class _GuidePageBodyState extends State<GuidePageBody> {
   final FlutterTts _tts = FlutterTts();
+  final stt.SpeechToText _speech = stt.SpeechToText();
 
-  String get _instructionText => 'Select your preferred navigation mode.';
-
-  @override
-  void initState() {
-    super.initState();
-    // Always speak in English
-    _tts.setLanguage('en-US');
-    _tts.setSpeechRate(0.5);
-    _tts.speak(_instructionText);
-  }
-  int _selectedIndex = 1; // Default to 'Voice + Haptic'
+  int _selectedIndex = 1;
+  bool _isListening = false;
 
   final List<_GuideOptionData> _options = [
     _GuideOptionData(
@@ -46,22 +37,120 @@ class _GuidePageBodyState extends State<GuidePageBody> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _speakOptions();
+  }
+
+  // ✅ Speak all options aloud in sequence with pauses
+  Future<void> _speakOptions() async {
+    await _tts.setLanguage('en-US');
+    await _tts.setSpeechRate(0.5);
+    await _tts.setPitch(1.0);
+    await _tts.awaitSpeakCompletion(true);
+
+    // Step 1: Speak intro
+    await _tts.speak(
+        'Select your preferred navigation mode. Here are your available options.');
+    await _tts.awaitSpeakCompletion(true);
+
+    // Step 2: Speak each option (title + subtitle)
+    for (var option in _options) {
+      await _tts.speak('${option.title}. ${option.subtitle}.');
+      await _tts.awaitSpeakCompletion(true);
+    }
+
+    // Step 3: Final instruction before listening
+    await _tts.speak(
+        'You can say Voice Only, Voice and Haptic, or Sound Cues with Voice to select your preferred mode.');
+    await _tts.awaitSpeakCompletion(true);
+
+    // Step 4: Start listening
+    await _startListening();
+  }
+
+  // ✅ Start listening for voice commands
+  Future<void> _startListening() async {
+    bool available = await _speech.initialize(
+      onStatus: (val) {
+        if (val == "done" && _isListening) {
+          setState(() => _isListening = false);
+          _startListening(); // keep listening if user pauses
+        }
+      },
+      onError: (val) {
+        debugPrint('Speech Error: $val');
+      },
+    );
+
+    if (available) {
+      setState(() => _isListening = true);
+      _speech.listen(
+        localeId: 'en-US',
+        onResult: (result) {
+          String recognized = result.recognizedWords.toLowerCase().trim();
+          debugPrint('🎙 Recognized: $recognized');
+          _processVoiceCommand(recognized);
+        },
+      );
+    }
+  }
+
+  // ✅ Match recognized voice command
+  void _processVoiceCommand(String recognized) {
+    if (recognized.contains('voice only')) {
+      _selectOption(0);
+    } else if (recognized.contains('voice and haptic') ||
+        recognized.contains('voice plus haptic')) {
+      _selectOption(1);
+    } else if (recognized.contains('sound cues') ||
+        recognized.contains('sound and voice')) {
+      _selectOption(2);
+    }
+  }
+
+  // ✅ Select option and navigate
+  Future<void> _selectOption(int index) async {
+    _speech.stop();
+    setState(() {
+      _selectedIndex = index;
+      _isListening = false;
+    });
+
+    await _tts.speak(
+        'You selected ${_options[index].title}. Navigating to the next page.');
+    await _tts.awaitSpeakCompletion(true);
+
+    if (mounted) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (context) => const DashboardScreen()),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _tts.stop();
+    _speech.stop();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0d1b2a),
       body: SafeArea(
         child: Column(
           children: [
-            // Header with Back Button and Skip
+            // Header
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
-                    onPressed: () {
-  Navigator.pop(context);
-},
-
+                    icon: const Icon(Icons.arrow_back_ios_new,
+                        color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
                   ),
                   const Spacer(),
                   TextButton(
@@ -78,48 +167,76 @@ class _GuidePageBodyState extends State<GuidePageBody> {
                 ],
               ),
             ),
+
             const SizedBox(height: 24),
-            // Header
-            Text(
-              _instructionText,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.spaceGrotesk(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Select your preferred navigation mode.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.spaceGrotesk(
+                  color: Colors.white,
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             const SizedBox(height: 32),
-            // Options
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                children: List.generate(_options.length, (index) {
-                  final option = _options[index];
-                  return Column(
-                    children: [
-                      GuideOption(
-                        icon: option.icon,
-                        title: option.title,
-                        subtitle: option.subtitle,
-                        isSelected: _selectedIndex == index,
-                        onTap: () {
-                          setState(() {
-                            _selectedIndex = index;
-                          });
-                        },
-                      ),
-                      if (index != _options.length - 1) const SizedBox(height: 16),
-                    ],
-                  );
-                }),
+
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  children: List.generate(_options.length, (index) {
+                    final option = _options[index];
+                    return Column(
+                      children: [
+                        GuideOption(
+                          icon: option.icon,
+                          title: option.title,
+                          subtitle: option.subtitle,
+                          isSelected: _selectedIndex == index,
+                          onTap: () => _selectOption(index),
+                        ),
+                        if (index != _options.length - 1)
+                          const SizedBox(height: 16),
+                      ],
+                    );
+                  }),
+                ),
               ),
             ),
-            const Spacer(),
-            // Continue Button
-            Container(
+
+            // Listening indicator
+            if (_isListening)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.greenAccent, width: 1),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.mic, size: 18, color: Colors.greenAccent),
+                      SizedBox(width: 8),
+                      Text(
+                        'Listening... Say "Voice Only" or "Voice and Haptic"',
+                        style:
+                            TextStyle(color: Colors.greenAccent, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Continue button
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              color: const Color(0xFF0d1b2a),
               child: SizedBox(
                 width: double.infinity,
                 height: 48,
@@ -130,13 +247,7 @@ class _GuidePageBodyState extends State<GuidePageBody> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => DashboardScreen(),
-                      ),
-                    );
-                  },
+                  onPressed: () => _selectOption(_selectedIndex),
                   child: Text(
                     'Continue',
                     style: GoogleFonts.spaceGrotesk(
@@ -159,7 +270,11 @@ class _GuideOptionData {
   final IconData icon;
   final String title;
   final String subtitle;
-  _GuideOptionData({required this.icon, required this.title, required this.subtitle});
+  const _GuideOptionData({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
 }
 
 class GuideOption extends StatelessWidget {
@@ -180,9 +295,12 @@ class GuideOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = isSelected ? const Color(0xFF1349ec) : Colors.transparent;
-    final iconColor = isSelected ? const Color(0xFF1349ec) : const Color(0xFF9DA4B9);
-    final bgColor = isSelected ? const Color(0xFF1A202C) : const Color(0xFF1E232C);
+    final borderColor =
+        isSelected ? const Color(0xFF1349ec) : Colors.transparent;
+    final iconColor =
+        isSelected ? const Color(0xFF1349ec) : const Color(0xFF9DA4B9);
+    final bgColor =
+        isSelected ? const Color(0xFF1A202C) : const Color(0xFF1E232C);
 
     return InkWell(
       onTap: onTap,
@@ -198,75 +316,29 @@ class GuideOption extends StatelessWidget {
             Container(
               width: 56,
               height: 56,
-              decoration: BoxDecoration(
-                color: bgColor,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                size: 32,
-                color: iconColor,
-              ),
+              decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
+              child: Icon(icon, size: 32, color: iconColor),
             ),
             const SizedBox(width: 24),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  Text(title,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: Color(0xFF9DA4B9),
-                      fontSize: 14,
-                    ),
-                  ),
+                  Text(subtitle,
+                      style: const TextStyle(
+                          color: Color(0xFF9DA4B9), fontSize: 14)),
                 ],
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-void main() {
-  runApp(const NavAIGuidePage());
-}
-
-class NavAIGuidePage extends StatelessWidget {
-  const NavAIGuidePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'NavAI',
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        fontFamily: 'Inter',
-        scaffoldBackgroundColor: const Color(0xFF0d1b2a),
-        colorScheme: const ColorScheme.dark().copyWith(
-          primary: const Color(0xFF2563eb),
-          surface: const Color(0xFF0d1b2a),
-        ),
-        textTheme: GoogleFonts.spaceGroteskTextTheme(
-          Theme.of(context).textTheme.apply(
-                bodyColor: Colors.white,
-                displayColor: Colors.white,
-              ),
-        ),
-      ),
-      home: const GuidePageBody(),
     );
   }
 }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:nav_aif_fyp/pages/page_two.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:nav_aif_fyp/pages/lang.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 class NameInputPage extends StatefulWidget {
@@ -26,15 +25,15 @@ class _NameInputPageState extends State<NameInputPage> {
     _startListening();
   }
 
-  Future<void> _initTTS() async {
+  void _initTTS() {
     // Always speak in English
     _tts.setLanguage('en-US');
     _tts.setSpeechRate(0.5);
     _tts.speak(_instructionText);
   }
 
-  void _startListening() async {
-    bool available = await _speech.initialize(
+  void _startListening() {
+    _speech.initialize(
       onStatus: (val) {
         if (val == "done" && !_isListening) {
           _startListening();
@@ -44,20 +43,20 @@ class _NameInputPageState extends State<NameInputPage> {
         debugPrint('Speech Error: $val');
         setState(() => _isListening = false);
       },
-    );
-
-    if (available) {
-      setState(() => _isListening = true);
-      _speech.listen(
-        localeId: 'en-US',
-        onResult: (result) {
-          String recognized = result.recognizedWords.toLowerCase().trim();
-          _processCommand(recognized);
-        },
-      );
-    } else {
-      setState(() => _isListening = false);
-    }
+    ).then((available) {
+      if (available) {
+        setState(() => _isListening = true);
+        _speech.listen(
+          localeId: 'en-US',
+          onResult: (result) {
+            String recognized = result.recognizedWords.toLowerCase().trim();
+            _processCommand(recognized);
+          },
+        );
+      } else {
+        setState(() => _isListening = false);
+      }
+    });
   }
 
   void _processCommand(String recognized) {
@@ -112,8 +111,8 @@ class _NameInputPageState extends State<NameInputPage> {
                     children: [
                       IconButton(
                         onPressed: () {
-  Navigator.pop(context);
-},
+                          Navigator.pop(context);
+                        },
                         icon: const Icon(
                           Icons.arrow_back_ios_new,
                           size: 28,
@@ -151,7 +150,7 @@ class _NameInputPageState extends State<NameInputPage> {
                         decoration: InputDecoration(
                           hintText: "Your name",
                           filled: true,
-                          fillColor: Colors.white.withOpacity(0.05),
+                          fillColor: Colors.white.withValues(alpha: 0.05),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(20),
                             borderSide: const BorderSide(
@@ -187,7 +186,7 @@ class _NameInputPageState extends State<NameInputPage> {
                           },
                           icon: Icon(
                             _isListening ? Icons.mic : Icons.mic_none,
-                            color: _isListening ? Colors.red : Color(0xFF9DA4B9),
+                            color: _isListening ? Colors.red : const Color(0xFF9DA4B9),
                             size: 28,
                           ),
                         ),
@@ -200,7 +199,7 @@ class _NameInputPageState extends State<NameInputPage> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.2),
+                        color: Colors.red.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: Colors.red, width: 1),
                       ),

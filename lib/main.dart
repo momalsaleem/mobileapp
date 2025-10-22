@@ -39,7 +39,7 @@ class _NavAIHomePageState extends State<NavAIHomePage>
 
   bool _isSpeaking = false;
   bool _isListening = false;
-  bool _urduMode = false;
+  final bool _urduMode = false;
 
   @override
   void initState() {
@@ -80,7 +80,6 @@ class _NavAIHomePageState extends State<NavAIHomePage>
 
     await Future.delayed(const Duration(seconds: 5));
 
-    // Defensive: TTSPreference may not exist in all branches; ignore errors
     try {
       if (false) {
         // placeholder for optional TTSPreference check
@@ -104,7 +103,7 @@ class _NavAIHomePageState extends State<NavAIHomePage>
       }
     });
 
-    _starController.addStatusListener((status) async {
+    _starController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         Future.delayed(const Duration(milliseconds: 500), () {
           _pathController.reset();
@@ -216,50 +215,53 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 450),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 40),
-                        child: IntrinsicHeight(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.start,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              SizedBox(
-                                height: 250,
-                                width: double.infinity,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(15),
-                                    gradient: const LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        Color(0xFF0a192f),
-                                        Color(0xFF0d253f),
-                                      ],
-                                    ),
-                                  ),
-                                  child: AnimatedBuilder(
-                                    animation: Listenable.merge([_pathController, _starController]),
-                                    builder: (context, child) {
-                                      return CustomPaint(
-                                        painter: PathAnimationPainter(
-                                          pathAnimation: _pathController,
-                                          starAnimation: Tween<double>(
-                                            begin: 0.0,
-                                            end: 1.0,
-                                          ).animate(
-                                            CurvedAnimation(
-                                              parent: _starController,
-                                              curve: Curves.easeInOut,
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 30, vertical: 40),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              height: 250,
+                              width: double.infinity,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(15),
+                                  gradient: const LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Color(0xFF0a192f),
+                                      Color(0xFF0d253f),
+                                    ],
                                   ),
                                 ),
+                                child: AnimatedBuilder(
+                                  animation: Listenable.merge(
+                                      [_pathController, _starController]),
+                                  builder: (context, child) {
+                                    return CustomPaint(
+                                      painter: PathAnimationPainter(
+                                        pathAnimation: _pathController,
+                                        starAnimation: Tween<double>(
+                                          begin: 0.0,
+                                          end: 1.0,
+                                        ).animate(
+                                          CurvedAnimation(
+                                            parent: _starController,
+                                            curve: Curves.easeInOut,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
                               ),
-                              const SizedBox(height: 20),
-                              const Text(
+                            ),
+                            const SizedBox(height: 20),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(
                                 'Welcome to Nav AI / نیو اے آئی میں خوش آمدید',
                                 style: TextStyle(
                                   fontSize: 22,
@@ -268,8 +270,11 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                                 ),
                                 textAlign: TextAlign.center,
                               ),
-                              const SizedBox(height: 10),
-                              const Text(
+                            ),
+                            const SizedBox(height: 10),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(
                                 'Smart navigation, designed for you.\nسمارٹ نیویگیشن، آپ کے لیے تیار کی گئی۔',
                                 style: TextStyle(
                                   fontSize: 14,
@@ -277,59 +282,69 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                                 ),
                                 textAlign: TextAlign.center,
                               ),
-                              const SizedBox(height: 20),
-                              _buildButton(
-                                'Start with Voice / آواز سے شروع کریں',
-                                Icons.mic,
-                                const Color(0xFF2563eb),
-                                Colors.white,
-                              ),
-                              _buildButton(
-                                'Continue with Touch / ٹچ کے ذریعے جاری رکھیں',
-                                Icons.smartphone,
-                                const Color(0xFF1f2937),
-                                const Color(0xFFd1d5db),
-                                borderColor: const Color(0xFF374151),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.only(top: 10),
-                                child: Column(
-                                  children: [
-                                    if (_isSpeaking)
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Icon(Icons.volume_up, size: 16, color: Colors.blue[300]),
-                                          const SizedBox(width: 5),
-                                          const Text(
+                            ),
+                            const SizedBox(height: 20),
+                            _buildButton(
+                              'Start with Voice / آواز سے شروع کریں',
+                              Icons.mic,
+                              const Color(0xFF2563eb),
+                              Colors.white,
+                            ),
+                            _buildButton(
+                              'Continue with Touch / ٹچ کے ذریعے جاری رکھیں',
+                              Icons.smartphone,
+                              const Color(0xFF1f2937),
+                              const Color(0xFFd1d5db),
+                              borderColor: const Color(0xFF374151),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: Column(
+                                children: [
+                                  if (_isSpeaking)
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.volume_up,
+                                            size: 16, color: Colors.blue[300]),
+                                        const SizedBox(width: 5),
+                                        const Flexible(
+                                          child: Text(
                                             'Speaking... / بول رہا ہے...',
                                             style: TextStyle(
                                               fontSize: 12,
                                               color: Colors.blue,
                                             ),
+                                            textAlign: TextAlign.center,
                                           ),
-                                        ],
-                                      ),
-                                    if (_isListening)
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Icon(Icons.mic, size: 16, color: Colors.green[300]),
-                                          const SizedBox(width: 5),
-                                          const Text(
+                                        ),
+                                      ],
+                                    ),
+                                  if (_isListening)
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.mic,
+                                            size: 16, color: Colors.green[300]),
+                                        const SizedBox(width: 5),
+                                        const Flexible(
+                                          child: Text(
                                             'Listening... / آواز سن رہا ہے...',
                                             style: TextStyle(
                                               fontSize: 12,
                                               color: Colors.green,
                                             ),
+                                            textAlign: TextAlign.center,
                                           ),
-                                        ],
-                                      ),
-                                  ],
-                                ),
+                                        ),
+                                      ],
+                                    ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -343,7 +358,9 @@ class _NavAIHomePageState extends State<NavAIHomePage>
     );
   }
 
-  Widget _buildButton(String text, IconData icon, Color background, Color foreground, {Color? borderColor}) {
+  Widget _buildButton(
+      String text, IconData icon, Color background, Color foreground,
+      {Color? borderColor}) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 5),
       width: double.infinity,
@@ -375,6 +392,7 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                 text,
                 textAlign: TextAlign.center,
                 overflow: TextOverflow.ellipsis,
+                maxLines: 2,
               ),
             ),
           ],
@@ -389,7 +407,8 @@ class PathAnimationPainter extends CustomPainter {
   final Animation<double> starAnimation;
   static const Size viewBox = Size(400, 200);
 
-  PathAnimationPainter({required this.pathAnimation, required this.starAnimation})
+  PathAnimationPainter(
+      {required this.pathAnimation, required this.starAnimation})
       : super(repaint: Listenable.merge([pathAnimation, starAnimation]));
 
   Path _getPath1() {
@@ -455,7 +474,8 @@ class PathAnimationPainter extends CustomPainter {
     final ui.PathMetric m2 = path2.computeMetrics().first;
 
     final double drawLen1 = m1.length * pathAnimation.value;
-    final double drawLen2 = m2.length * math.max(0.0, pathAnimation.value - 0.075);
+    final double drawLen2 =
+        m2.length * math.max(0.0, pathAnimation.value - 0.075);
 
     final double strokeWidth = 3 / scaleX;
 
@@ -470,7 +490,8 @@ class PathAnimationPainter extends CustomPainter {
       ..strokeWidth = strokeWidth;
 
     canvas.drawPath(m1.extractPath(0, drawLen1), paint1);
-    canvas.drawPath(m2.extractPath(0, drawLen2), paint2);
+    canvas.drawPath(m2.extractPath(0, drawLen2),
+        paint2); // Fixed typo: drawLang2 -> drawLen2
 
     if (starAnimation.value > 0.0) {
       int steps = 100;
@@ -526,7 +547,8 @@ class PathAnimationPainter extends CustomPainter {
 
         canvas.drawPath(star, starPaint);
 
-        final starPaintSolid = Paint()..color = Colors.white.withOpacity(opacity);
+        final starPaintSolid = Paint()
+          ..color = Colors.white.withOpacity(opacity);
 
         canvas.drawPath(star, starPaintSolid);
 

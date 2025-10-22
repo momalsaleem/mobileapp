@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:nav_aif_fyp/pages/privacy.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:nav_aif_fyp/pages/lang.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 class SettingsPage extends StatefulWidget {
-	const SettingsPage({super.key});
+  const SettingsPage({super.key});
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -99,147 +99,147 @@ class _SettingsPageState extends State<SettingsPage> {
         title: const Text('Settings'),
         backgroundColor: const Color(0xFF0d1b2a),
       ),
-			body: Column(
-				children: [
-					Expanded(
-						child: ListView(
-							padding: const EdgeInsets.all(16),
-							children: [
-								// Guide: Make all cards clickable for navigation or actions
-								_settingsCard(
-									icon: Icons.person,
-									title: 'Account',
-									subtitle: 'Manage your account settings',
-									onTap: () {
-										_speech.stop();
-										setState(() => _isListening = false);
-										_tts.speak('Opening account settings.');
-										// TODO: Navigate to account settings
-									},
-								),
-								_settingsCard(
-									icon: Icons.lock,
-									title: 'Privacy',
-									subtitle: 'Privacy and security options',
-									onTap: () {
-										_speech.stop();
-										setState(() => _isListening = false);
-										_tts.speak('Opening privacy settings.');
-										Navigator.of(context).push(
-											MaterialPageRoute(builder: (context) => const PrivacyPage()),
-										);
-									},
-								),
-								_settingsCard(
-									icon: Icons.notifications,
-									title: 'Notifications',
-									subtitle: 'Notification preferences',
-									onTap: () {
-										_speech.stop();
-										setState(() => _isListening = false);
-										_tts.speak('Opening notification settings.');
-										// TODO: Navigate to notification settings
-									},
-								),
-								_settingsCard(
-									icon: Icons.info,
-									title: 'About',
-									subtitle: 'App information',
-									onTap: () {
-										_speech.stop();
-										setState(() => _isListening = false);
-										_tts.speak('Showing about information.');
-										// TODO: Show about dialog
-									},
-								),
-							],
-						),
-					),
-					// Voice command indicator
-					if (_isListening)
-						Container(
-							margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-							padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-							decoration: BoxDecoration(
-								color: Colors.green.withOpacity(0.2),
-								borderRadius: BorderRadius.circular(20),
-								border: Border.all(color: Colors.green, width: 1),
-							),
-							child: Row(
-								mainAxisSize: MainAxisSize.min,
-								children: [
-									Icon(Icons.mic, size: 16, color: Colors.green[300]),
-									const SizedBox(width: 8),
-									Text(
-										'Listening... Say "account", "privacy", "notifications", or "about"',
-										style: TextStyle(
-											fontSize: 12,
-											color: Colors.green[300],
-										),
-									),
-								],
-							),
-						),
-				],
-			),
-		);
-	}
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // Guide: Make all cards clickable for navigation or actions
+                _settingsCard(
+                  icon: Icons.person,
+                  title: 'Account',
+                  subtitle: 'Manage your account settings',
+                  onTap: () {
+                    _speech.stop();
+                    setState(() => _isListening = false);
+                    _tts.speak('Opening account settings.');
+                    // TODO: Navigate to account settings
+                  },
+                ),
+                _settingsCard(
+                  icon: Icons.lock,
+                  title: 'Privacy',
+                  subtitle: 'Privacy and security options',
+                  onTap: () {
+                    _speech.stop();
+                    setState(() => _isListening = false);
+                    _tts.speak('Opening privacy settings.');
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (context) => const PrivacyPage()),
+                    );
+                  },
+                ),
+                _settingsCard(
+                  icon: Icons.notifications,
+                  title: 'Notifications',
+                  subtitle: 'Notification preferences',
+                  onTap: () {
+                    _speech.stop();
+                    setState(() => _isListening = false);
+                    _tts.speak('Opening notification settings.');
+                    // TODO: Navigate to notification settings
+                  },
+                ),
+                _settingsCard(
+                  icon: Icons.info,
+                  title: 'About',
+                  subtitle: 'App information',
+                  onTap: () {
+                    _speech.stop();
+                    setState(() => _isListening = false);
+                    _tts.speak('Showing about information.');
+                    // TODO: Show about dialog
+                  },
+                ),
+              ],
+            ),
+          ),
+          // Voice command indicator
+          if (_isListening)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 51), // 0.2 * 255 ≈ 51
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.green, width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.mic, size: 16, color: Colors.green[300]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Listening... Say "account", "privacy", "notifications", or "about"',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.green[300],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
-	Widget _settingsCard({
-		required IconData icon,
-		required String title,
-		required String subtitle,
-		required VoidCallback onTap,
-	}) {
-		return InkWell(
-			onTap: onTap,
-			borderRadius: BorderRadius.circular(12),
-			child: Container(
-				margin: const EdgeInsets.only(bottom: 16),
-				padding: const EdgeInsets.all(16),
-				decoration: BoxDecoration(
-					color: Colors.white.withOpacity(0.05),
-					borderRadius: BorderRadius.circular(12),
-				),
-				child: Row(
-					children: [
-						Container(
-							padding: const EdgeInsets.all(12),
-							decoration: BoxDecoration(
-								color: const Color(0xFF2563eb).withOpacity(0.25),
-								shape: BoxShape.circle,
-							),
-							child: Icon(icon, color: const Color(0xFF2563eb)),
-						),
-						const SizedBox(width: 16),
-						Expanded(
-							child: Column(
-								crossAxisAlignment: CrossAxisAlignment.start,
-								children: [
-									Text(
-										title,
-										style: const TextStyle(
-											fontWeight: FontWeight.bold,
-											fontSize: 18,
-											color: Colors.white,
-										),
-									),
-									const SizedBox(height: 4),
-									Text(
-										subtitle,
-										style: TextStyle(
-											fontSize: 14,
-											color: Colors.white.withOpacity(0.6),
-										),
-									),
-								],
-							),
-						),
-					],
-				),
-			),
-		);
-	}
+  Widget _settingsCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 13), // 0.05 * 255 ≈ 13
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2563eb).withValues(alpha: 64), // 0.25 * 255 ≈ 64
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: const Color(0xFF2563eb)),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white.withValues(alpha: 153), // 0.6 * 255 ≈ 153
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   void dispose() {

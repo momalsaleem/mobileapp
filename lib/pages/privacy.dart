@@ -103,7 +103,7 @@ class _PrivacyPageState extends State<PrivacyPage> {
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
+          color: Colors.white.withValues(alpha: 13), // 0.05 * 255 ≈ 13
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -111,7 +111,7 @@ class _PrivacyPageState extends State<PrivacyPage> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF2563eb).withOpacity(0.25),
+                color: const Color(0xFF2563eb).withValues(alpha: 64), // 0.25 * 255 ≈ 64
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: const Color(0xFF2563eb)),
@@ -134,7 +134,7 @@ class _PrivacyPageState extends State<PrivacyPage> {
                     subtitle,
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.white.withOpacity(0.6),
+                      color: Colors.white.withValues(alpha: 153), // 0.6 * 255 ≈ 153
                     ),
                   ),
                 ],
@@ -152,4 +152,3 @@ class _PrivacyPageState extends State<PrivacyPage> {
     }
   }
 }
-
