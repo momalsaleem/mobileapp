@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:nav_aif_fyp/pages/settings.dart';
 import 'package:nav_aif_fyp/pages/profile.dart';
+import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+
+// Import your camera page - replace with your actual camera page import
+import 'package:nav_aif_fyp/pages/camera_page.dart'; // Adjust this import path
+import 'package:nav_aif_fyp/pages/saved_routes_page.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -17,53 +23,129 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isListening = false;
   int? _hoveredIndex;
   int _backPressCount = 0;
+  bool _isInitialized = false;
 
-  String get _instructionText =>
-      'Welcome to your dashboard. You can choose: Object Detection, Navigation, Saved Routes, or Guide. '
-      'You can also say Settings or Profile to navigate.';
+  String get _instructionText => Lang.t('dashboard_welcome');
 
-  final List<Map<String, dynamic>> cards = [
-    {
-      'icon': Icons.camera_alt,
-      'title': "Object Detection",
-      'subtitle': "Identify objects in real-time"
-    },
-    {
-      'icon': Icons.navigation,
-      'title': "Navigation",
-      'subtitle': "Turn-by-turn directions"
-    },
-    {
-      'icon': Icons.route,
-      'title': "Saved Routes",
-      'subtitle': "Access your frequent routes"
-    },
-    {'icon': Icons.book, 'title': "Guide", 'subtitle': "Access complete guide"},
-  ];
+  List<Map<String, dynamic>> _cards = [];
+  
+  void _buildCards() {
+    _cards = [
+      {
+        'icon': Icons.camera_alt,
+        'titleKey': "object_detection",
+        'subtitleKey': "object_detection_desc",
+        'onTap': _openObjectDetection, // Add onTap handler
+      },
+      {
+        'icon': Icons.navigation,
+        'titleKey': "navigation",
+        'subtitleKey': "navigation_desc",
+        'onTap': () => _handleCardTap('navigation'), // Add onTap handler
+      },
+      {
+        'icon': Icons.route,
+        'titleKey': "saved_routes",
+        'subtitleKey': "saved_routes_desc",
+        'onTap': () => _handleCardTap('saved_routes'), // Add onTap handler
+      },
+      {
+        'icon': Icons.book, 
+        'titleKey': "guide", 
+        'subtitleKey': "guide_desc",
+        'onTap': () => _handleCardTap('guide'), // Add onTap handler
+      },
+    ];
+  }
+
+  // Function to handle object detection card tap
+  void _openObjectDetection() async {
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    
+    if (isVoiceModeEnabled) {
+      await _tts.speak('${Lang.t('opening')} ${Lang.t('object_detection')}.');
+    }
+    
+    // Navigate to camera page
+    if (mounted) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (context) => CameraPage()), // Replace with your actual camera page
+      );
+    }
+  }
+
+  // Function to handle other card taps
+  void _handleCardTap(String feature) async {
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    
+    if (isVoiceModeEnabled) {
+      await _tts.speak('${Lang.t(feature)} ${Lang.t('selected')}.');
+    }
+    
+    // TODO: Add navigation for other features
+    if (feature == 'saved_routes') {
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const SavedRoutesPage()),
+        );
+      }
+      return;
+    }
+    debugPrint('$feature card tapped');
+  }
 
   @override
   void initState() {
     super.initState();
-    _initTTSAndSpeak();
+    _buildCards();
+    setState(() {
+      _isInitialized = true;
+    });
+    _initializeApp();
   }
 
-  Future<void> _initTTSAndSpeak() async {
-    await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(0.5);
+  Future<void> _initializeApp() async {
+    await _loadPreferences();
+    await _initTTS();
+    
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    
+    if (isVoiceModeEnabled) {
+      _speakOptions();
+    }
+    
+    _startListening();
+  }
 
-    // Speak all options first
+  Future<void> _loadPreferences() async {
+    await Lang.init();
+  }
+
+  Future<void> _initTTS() async {
+    final isUrdu = Lang.isUrdu;
+    if (isUrdu) {
+      try {
+        await _tts.setLanguage('ur-PK');
+      } catch (_) {
+        await _tts.setLanguage('en-US');
+      }
+    } else {
+      await _tts.setLanguage('en-US');
+    }
+    await _tts.setSpeechRate(0.5);
+    await _tts.setPitch(1.0);
+  }
+
+  Future<void> _speakOptions() async {
     await _tts.speak(_instructionText);
     await Future.delayed(const Duration(seconds: 6));
 
-    // Speak each option for clarity
-    for (var card in cards) {
-      await _tts.speak('${card['title']}. ${card['subtitle']}');
+    for (var card in _cards) {
+      await _tts.speak('${Lang.t(card['titleKey'])}. ${Lang.t(card['subtitleKey'])}');
       await Future.delayed(const Duration(seconds: 2));
     }
 
-    // Wait for last speech to finish before listening
     await _tts.awaitSpeakCompletion(true);
-    _startListening();
   }
 
   void _startListening() {
@@ -81,10 +163,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (available) {
         setState(() => _isListening = true);
         _speech.listen(
-          localeId: 'en-US',
+          localeId: Lang.speechLocaleId,
           onResult: (result) {
             String recognized = result.recognizedWords.toLowerCase().trim();
-            _processCommand(recognized);
+            if (recognized.isNotEmpty) {
+              _processCommand(recognized);
+            }
           },
         );
       } else {
@@ -96,44 +180,93 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void _processCommand(String recognized) async {
     debugPrint("🎙 Dashboard Recognized: $recognized");
 
-    // Stop current listening and TTS
     await _speech.stop();
     setState(() => _isListening = false);
 
-    if (recognized.contains('settings')) {
-      await _tts.speak('Opening settings.');
-      Future.delayed(const Duration(seconds: 1), () {
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    bool commandMatched = false;
+
+    if (recognized.contains('settings') || recognized.contains('سیٹنگز')) {
+      if (isVoiceModeEnabled) {
+        await _tts.speak('${Lang.t('opening')} ${Lang.t('settings')}.');
+        await _tts.awaitSpeakCompletion(true);
+      }
+      commandMatched = true;
+      Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (context) => const SettingsPage()),
           );
         }
       });
-    } else if (recognized.contains('profile')) {
-      await _tts.speak('Opening profile.');
-      Future.delayed(const Duration(seconds: 1), () {
+    } else if (recognized.contains('profile') || recognized.contains('پروفائل')) {
+      if (isVoiceModeEnabled) {
+        await _tts.speak('${Lang.t('opening')} ${Lang.t('profile')}.');
+        await _tts.awaitSpeakCompletion(true);
+      }
+      commandMatched = true;
+      Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (context) => const ProfileScreen()),
           );
         }
       });
-    } else if (recognized.contains('object')) {
-      await _tts.speak('Object detection selected.');
-    } else if (recognized.contains('navigation')) {
-      await _tts.speak('Navigation selected.');
-    } else if (recognized.contains('route')) {
-      await _tts.speak('Opening saved routes.');
-    } else if (recognized.contains('guide')) {
-      await _tts.speak('Opening guide.');
-    } else {
-      await _tts.speak(
-          "Sorry, I didn't understand. Please say settings, profile, or a feature name.");
+    } else if (recognized.contains('object') || recognized.contains('آبجیکٹ')) {
+      if (isVoiceModeEnabled) {
+        await _tts.speak('${Lang.t('opening')} ${Lang.t('object_detection')}.');
+        await _tts.awaitSpeakCompletion(true);
+      }
+      commandMatched = true;
+      // Navigate to camera page when voice command is recognized
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (context) => CameraPage()), // Replace with your actual camera page
+          );
+        }
+      });
+    } else if (recognized.contains('navigation') || recognized.contains('نیویگیشن')) {
+      if (isVoiceModeEnabled) {
+        await _tts.speak('${Lang.t('navigation')} ${Lang.t('selected')}.');
+      }
+      commandMatched = true;
+    } else if (recognized.contains('route') || recognized.contains('راستہ')) {
+      if (isVoiceModeEnabled) {
+        await _tts.speak('${Lang.t('opening')} ${Lang.t('saved_routes')}.');
+      }
+      commandMatched = true;
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (context) => const SavedRoutesPage()),
+          );
+        }
+      });
+    } else if (recognized.contains('guide') || recognized.contains('گائیڈ')) {
+      if (isVoiceModeEnabled) {
+        await _tts.speak('${Lang.t('opening')} ${Lang.t('guide')}.');
+      }
+      commandMatched = true;
+    }
+    
+    if (!commandMatched && recognized.length > 2) {
+      await _askToRepeat();
+    } else if (!commandMatched) {
       _startListening();
     }
   }
 
-  Widget _buildCard(int index, IconData icon, String title, String subtitle) {
+  Future<void> _askToRepeat() async {
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (isVoiceModeEnabled) {
+      await _tts.speak(Lang.t('not_understood'));
+      await _tts.awaitSpeakCompletion(true);
+      _startListening();
+    }
+  }
+
+  Widget _buildCard(int index, IconData icon, String titleKey, String subtitleKey, VoidCallback onTap) {
     final isHovered = _hoveredIndex == index;
     final borderColor =
         isHovered ? const Color(0xFF1349ec) : Colors.transparent;
@@ -145,49 +278,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hoveredIndex = index),
       onExit: (_) => setState(() => _hoveredIndex = null),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: borderColor, width: 2),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.25),
-                shape: BoxShape.circle,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderColor, width: 2),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.25),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: iconColor),
               ),
-              child: Icon(icon, color: iconColor),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                      color: Colors.white,
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                    Text(
+                      Lang.t(titleKey),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: Colors.white,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white.withOpacity(0.6),
+                    const SizedBox(height: 4),
+                    Text(
+                      Lang.t(subtitleKey),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white.withOpacity(0.6),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -236,6 +372,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_isInitialized) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0d1b2a),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1349EC)),
+              ),
+              SizedBox(height: 20),
+              Text(
+                'Loading Dashboard...',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFF0d1b2a),
       appBar: AppBar(
@@ -253,9 +413,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         centerTitle: true,
         backgroundColor: const Color(0xFF0d1b2a),
         elevation: 0.5,
-        title: const Text(
-          "NavAI",
-          style: TextStyle(
+        title: Text(
+          Lang.t('navai'),
+          style: const TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 20,
             color: Colors.white,
@@ -271,10 +431,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 crossAxisCount: 2,
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
-                children: List.generate(cards.length, (index) {
-                  final card = cards[index];
+                children: List.generate(_cards.length, (index) {
+                  final card = _cards[index];
                   return _buildCard(
-                      index, card['icon'], card['title'], card['subtitle']);
+                    index, 
+                    card['icon'], 
+                    card['titleKey'], 
+                    card['subtitleKey'],
+                    card['onTap'], // Pass the onTap callback
+                  );
                 }),
               ),
             ),
@@ -294,7 +459,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Icon(Icons.mic, size: 16, color: Colors.green[300]),
                   const SizedBox(width: 8),
                   Text(
-                    'Listening... Say "settings", "profile", or a feature name',
+                    '${Lang.t('listening')} Say "settings", "profile", or a feature name',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.green[300],
@@ -312,10 +477,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
         child: Row(
           children: [
-            _buildBottomNavItem(Icons.home, "Home", true, context),
-            _buildBottomNavItem(Icons.settings, "Settings", false, context),
-            _buildBottomNavItem(Icons.bookmark, "Saved Routes", false, context),
-            _buildBottomNavItem(Icons.person, "Profile", false, context),
+            _buildBottomNavItem(Icons.home, Lang.t('home_menu'), true, context),
+            _buildBottomNavItem(Icons.settings, Lang.t('settings'), false, context),
+            _buildBottomNavItem(Icons.bookmark, Lang.t('saved_routes'), false, context),
+            _buildBottomNavItem(Icons.person, Lang.t('profile'), false, context),
           ],
         ),
       ),

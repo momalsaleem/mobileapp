@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:nav_aif_fyp/services/preferences_manager.dart';
 
 class PrivacyPage extends StatefulWidget {
   const PrivacyPage({super.key});
@@ -11,20 +13,102 @@ class PrivacyPage extends StatefulWidget {
 
 class _PrivacyPageState extends State<PrivacyPage> {
   final FlutterTts _tts = FlutterTts();
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _isListening = false;
 
   @override
   void initState() {
     super.initState();
-    _initTTS();
+    _loadPreferences();
+  }
+
+  Future<void> _loadPreferences() async {
+    await Lang.init();
+    await _initTTS();
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (isVoiceModeEnabled) {
+      await _speakWelcome();
+    }
+    _startListening();
   }
 
   Future<void> _initTTS() async {
-    await _tts.setLanguage('en-US');
+    if (Lang.isUrdu) {
+      try {
+        await _tts.setLanguage('ur-PK');
+      } catch (_) {
+        await _tts.setLanguage('en-US');
+      }
+    } else {
+      await _tts.setLanguage('en-US');
+    }
     await _tts.setSpeechRate(0.5);
-    
-    // Only speak if user selected "continue with voice" (English mode)
-    if (TTSPreference.enabled && TTSPreference.language == 'en') {
-      await _tts.speak('Privacy and Security Settings. Here you can manage your data privacy, location permissions, and security preferences.');
+  }
+
+  Future<void> _speakWelcome() async {
+    await _tts.speak(Lang.t('privacy_title'));
+    await _tts.awaitSpeakCompletion(true);
+  }
+
+  void _startListening() {
+    _speech.initialize(
+      onStatus: (val) {
+        if (val == "done" && !_isListening) {
+          _startListening();
+        }
+      },
+      onError: (val) {
+        setState(() => _isListening = false);
+      },
+    ).then((available) {
+      if (available) {
+        setState(() => _isListening = true);
+        _speech.listen(
+          localeId: Lang.speechLocaleId,
+          onResult: (result) {
+            final recognized = result.recognizedWords.toLowerCase().trim();
+            if (recognized.isNotEmpty) {
+              _processCommand(recognized);
+            }
+          },
+        );
+      } else {
+        setState(() => _isListening = false);
+      }
+    });
+  }
+
+  Future<void> _askToRepeat() async {
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (isVoiceModeEnabled) {
+      await _initTTS();
+      await _tts.speak(Lang.t('please_repeat'));
+      await _tts.awaitSpeakCompletion(true);
+      _startListening();
+    }
+  }
+
+  void _processCommand(String recognized) async {
+    // Example: respond to basic terms – extend as needed
+    bool matched = false;
+    if (recognized.contains('location') || recognized.contains('لوکیشن')) {
+      matched = true;
+      await _tts.speak(Lang.t('location_services'));
+    } else if (recognized.contains('security') || recognized.contains('سیکیورٹی')) {
+      matched = true;
+      await _tts.speak(Lang.t('data_security'));
+    } else if (recognized.contains('sharing') || recognized.contains('شیئر')) {
+      matched = true;
+      await _tts.speak(Lang.t('data_sharing'));
+    } else if (recognized.contains('delete') || recognized.contains('حذف')) {
+      matched = true;
+      await _tts.speak(Lang.t('delete_data'));
+    } else if (recognized.contains('policy') || recognized.contains('پالیسی')) {
+      matched = true;
+      await _tts.speak(Lang.t('privacy_policy'));
+    }
+    if (!matched && recognized.length > 2) {
+      await _askToRepeat();
     }
   }
 
@@ -39,7 +123,7 @@ class _PrivacyPageState extends State<PrivacyPage> {
                 onPressed: () => Navigator.of(context).maybePop(),
               )
             : null,
-        title: const Text('Privacy & Security'),
+        title: Text(Lang.t('privacy_title')),
         backgroundColor: const Color(0xFF0d1b2a),
       ),
       body: ListView(
@@ -47,42 +131,42 @@ class _PrivacyPageState extends State<PrivacyPage> {
         children: [
           _privacyCard(
             icon: Icons.location_on,
-            title: 'Location Services',
-            subtitle: 'Manage location permissions and accuracy',
+            title: Lang.t('location_services'),
+            subtitle: Lang.t('location_services_desc'),
             onTap: () {
-              _speakIfEnabled('Location Services. You can control how the app uses your location data for navigation.');
+              _speakIfEnabled(Lang.t('location_services'));
             },
           ),
           _privacyCard(
             icon: Icons.security,
-            title: 'Data Security',
-            subtitle: 'Control how your data is stored and protected',
+            title: Lang.t('data_security'),
+            subtitle: Lang.t('data_security_desc'),
             onTap: () {
-              _speakIfEnabled('Data Security. Manage how your personal data and routes are secured and stored.');
+              _speakIfEnabled(Lang.t('data_security'));
             },
           ),
           _privacyCard(
             icon: Icons.share,
-            title: 'Data Sharing',
-            subtitle: 'Control what data is shared with third parties',
+            title: Lang.t('data_sharing'),
+            subtitle: Lang.t('data_sharing_desc'),
             onTap: () {
-              _speakIfEnabled('Data Sharing. Control whether your anonymous usage data is shared to improve the app.');
+              _speakIfEnabled(Lang.t('data_sharing'));
             },
           ),
           _privacyCard(
             icon: Icons.delete,
-            title: 'Delete Data',
-            subtitle: 'Remove your stored data and routes',
+            title: Lang.t('delete_data'),
+            subtitle: Lang.t('delete_data_desc'),
             onTap: () {
-              _speakIfEnabled('Delete Data. You can permanently delete your stored routes and personal data.');
+              _speakIfEnabled(Lang.t('delete_data'));
             },
           ),
           _privacyCard(
             icon: Icons.privacy_tip,
-            title: 'Privacy Policy',
-            subtitle: 'Read our privacy policy and terms',
+            title: Lang.t('privacy_policy'),
+            subtitle: Lang.t('privacy_policy_desc'),
             onTap: () {
-              _speakIfEnabled('Privacy Policy. Review our complete privacy policy and terms of service.');
+              _speakIfEnabled(Lang.t('privacy_policy'));
             },
           ),
         ],
@@ -146,9 +230,18 @@ class _PrivacyPageState extends State<PrivacyPage> {
     );
   }
 
-  void _speakIfEnabled(String text) {
-    if (TTSPreference.enabled && TTSPreference.language == 'en') {
-      _tts.speak(text);
+  void _speakIfEnabled(String text) async {
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (isVoiceModeEnabled) {
+      await _initTTS();
+      await _tts.speak(text);
     }
+  }
+
+  @override
+  void dispose() {
+    _speech.stop();
+    _tts.stop();
+    super.dispose();
   }
 }

@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:nav_aif_fyp/pages/page_four.dart';
+import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:nav_aif_fyp/services/preferences_manager.dart';
 
 class GuidePageBody extends StatefulWidget {
   const GuidePageBody({super.key});
@@ -17,46 +19,85 @@ class _GuidePageBodyState extends State<GuidePageBody> {
 
   int _selectedIndex = 1;
   bool _isListening = false;
+  bool _isInitialized = false; // Add this flag
 
-  final List<_GuideOptionData> _options = [
-    _GuideOptionData(
-      icon: Icons.mic,
-      title: 'Voice Only',
-      subtitle: 'Clear, spoken directions',
-    ),
-    _GuideOptionData(
-      icon: Icons.vibration,
-      title: 'Voice + Haptic',
-      subtitle: 'Spoken directions with vibration cues',
-    ),
-    _GuideOptionData(
-      icon: Icons.graphic_eq,
-      title: 'Sound Cues + Voice',
-      subtitle: 'Ambient sounds and spoken directions',
-    ),
-  ];
+  List<_GuideOptionData> _options = [];
+  
+  void _buildOptions() {
+    _options = [
+      _GuideOptionData(
+        icon: Icons.mic,
+        titleKey: 'voice_only',
+        subtitleKey: 'voice_only_desc',
+      ),
+      _GuideOptionData(
+        icon: Icons.vibration,
+        titleKey: 'voice_haptic',
+        subtitleKey: 'voice_haptic_desc',
+      ),
+      _GuideOptionData(
+        icon: Icons.graphic_eq,
+        titleKey: 'sound_voice',
+        subtitleKey: 'sound_voice_desc',
+      ),
+    ];
+  }
 
   @override
   void initState() {
     super.initState();
-    _speakOptions();
+    _buildOptions(); // Build options immediately
+    setState(() {
+      _isInitialized = true; // Mark as initialized for UI
+    });
+    _initializeApp(); // Separate initialization that doesn't block UI
   }
 
-  // ✅ Speak all options aloud in sequence with pauses
-  Future<void> _speakOptions() async {
-    await _tts.setLanguage('en-US');
+  // Separate async initialization that doesn't block UI rendering
+  Future<void> _initializeApp() async {
+    await _loadPreferences();
+    await _initTTS();
+    
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    
+    // Only speak if voice mode is enabled - don't await this to prevent blocking
+    if (isVoiceModeEnabled) {
+      _speakOptions(); // Don't await - let it run in background
+    }
+    
+    // Start listening for voice input
+    await _startListening();
+  }
+
+  Future<void> _loadPreferences() async {
+    await Lang.init();
+  }
+
+  Future<void> _initTTS() async {
+    final isUrdu = Lang.isUrdu;
+    if (isUrdu) {
+      try {
+        await _tts.setLanguage('ur-PK');
+      } catch (_) {
+        await _tts.setLanguage('en-US');
+      }
+    } else {
+      await _tts.setLanguage('en-US');
+    }
     await _tts.setSpeechRate(0.5);
     await _tts.setPitch(1.0);
     await _tts.awaitSpeakCompletion(true);
+  }
 
+  // ✅ Speak all options aloud in sequence with pauses - NO AWAIT in call chain
+  Future<void> _speakOptions() async {
     // Step 1: Speak intro
-    await _tts.speak(
-        'Select your preferred navigation mode. Here are your available options.');
+    await _tts.speak(Lang.t('nav_mode_intro'));
     await _tts.awaitSpeakCompletion(true);
 
     // Step 2: Speak each option (title + subtitle)
     for (var option in _options) {
-      await _tts.speak('${option.title}. ${option.subtitle}.');
+      await _tts.speak('${Lang.t(option.titleKey)}. ${Lang.t(option.subtitleKey)}.');
       await _tts.awaitSpeakCompletion(true);
     }
 
@@ -64,9 +105,6 @@ class _GuidePageBodyState extends State<GuidePageBody> {
     await _tts.speak(
         'You can say Voice Only, Voice and Haptic, or Sound Cues with Voice to select your preferred mode.');
     await _tts.awaitSpeakCompletion(true);
-
-    // Step 4: Start listening
-    await _startListening();
   }
 
   // ✅ Start listening for voice commands
@@ -86,26 +124,48 @@ class _GuidePageBodyState extends State<GuidePageBody> {
     if (available) {
       setState(() => _isListening = true);
       _speech.listen(
-        localeId: 'en-US',
+        localeId: Lang.speechLocaleId,
         onResult: (result) {
           String recognized = result.recognizedWords.toLowerCase().trim();
-          debugPrint('🎙 Recognized: $recognized');
-          _processVoiceCommand(recognized);
+          if (recognized.isNotEmpty) {
+            debugPrint('🎙 Recognized: $recognized');
+            _processVoiceCommand(recognized);
+          }
         },
       );
     }
   }
 
   // ✅ Match recognized voice command
-  void _processVoiceCommand(String recognized) {
-    if (recognized.contains('voice only')) {
+  void _processVoiceCommand(String recognized) async {
+    bool commandMatched = false;
+    
+    if (recognized.contains('voice only') || recognized.contains('صرف آواز')) {
       _selectOption(0);
+      commandMatched = true;
     } else if (recognized.contains('voice and haptic') ||
-        recognized.contains('voice plus haptic')) {
+        recognized.contains('voice plus haptic') ||
+        recognized.contains('آواز اور ہیپٹک')) {
       _selectOption(1);
+      commandMatched = true;
     } else if (recognized.contains('sound cues') ||
-        recognized.contains('sound and voice')) {
+        recognized.contains('sound and voice') ||
+        recognized.contains('آواز کے اشارے')) {
       _selectOption(2);
+      commandMatched = true;
+    }
+    
+    // If command not recognized, ask to repeat
+    if (!commandMatched && recognized.length > 2) {
+      await _askToRepeat();
+    }
+  }
+
+  Future<void> _askToRepeat() async {
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (isVoiceModeEnabled) {
+      await _tts.speak(Lang.t('please_repeat'));
+      await _tts.awaitSpeakCompletion(true);
     }
   }
 
@@ -117,9 +177,12 @@ class _GuidePageBodyState extends State<GuidePageBody> {
       _isListening = false;
     });
 
-    await _tts.speak(
-        'You selected ${_options[index].title}. Navigating to the next page.');
-    await _tts.awaitSpeakCompletion(true);
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (isVoiceModeEnabled) {
+      await _tts.speak(
+          '${Lang.t('selected_nav_mode')} ${Lang.t(_options[index].titleKey)}. ${Lang.t('navigating_next')}');
+      await _tts.awaitSpeakCompletion(true);
+    }
 
     if (mounted) {
       Navigator.of(context).push(
@@ -137,6 +200,31 @@ class _GuidePageBodyState extends State<GuidePageBody> {
 
   @override
   Widget build(BuildContext context) {
+    // Show loading indicator if not initialized yet
+    if (!_isInitialized) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0d1b2a),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1349EC)),
+              ),
+              SizedBox(height: 20),
+              Text(
+                'Loading...',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFF0d1b2a),
       body: SafeArea(
@@ -154,9 +242,13 @@ class _GuidePageBodyState extends State<GuidePageBody> {
                   ),
                   const Spacer(),
                   TextButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (context) => const DashboardScreen()),
+                      );
+                    },
                     child: Text(
-                      'Skip',
+                      Lang.t('skip'),
                       style: GoogleFonts.spaceGrotesk(
                         color: const Color(0xFF9DA4B9),
                         fontSize: 16,
@@ -172,7 +264,7 @@ class _GuidePageBodyState extends State<GuidePageBody> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
-                'Select your preferred navigation mode.',
+                Lang.t('select_nav_mode'),
                 textAlign: TextAlign.center,
                 style: GoogleFonts.spaceGrotesk(
                   color: Colors.white,
@@ -193,8 +285,8 @@ class _GuidePageBodyState extends State<GuidePageBody> {
                       children: [
                         GuideOption(
                           icon: option.icon,
-                          title: option.title,
-                          subtitle: option.subtitle,
+                          titleKey: option.titleKey,
+                          subtitleKey: option.subtitleKey,
                           isSelected: _selectedIndex == index,
                           onTap: () => _selectOption(index),
                         ),
@@ -221,13 +313,13 @@ class _GuidePageBodyState extends State<GuidePageBody> {
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(Icons.mic, size: 18, color: Colors.greenAccent),
-                      SizedBox(width: 8),
+                    children: [
+                      const Icon(Icons.mic, size: 18, color: Colors.greenAccent),
+                      const SizedBox(width: 8),
                       Text(
-                        'Listening... Say "Voice Only" or "Voice and Haptic"',
+                        '${Lang.t('listening')} Say "Voice Only" or "Voice and Haptic"',
                         style:
-                            TextStyle(color: Colors.greenAccent, fontSize: 13),
+                            const TextStyle(color: Colors.greenAccent, fontSize: 13),
                       ),
                     ],
                   ),
@@ -249,7 +341,7 @@ class _GuidePageBodyState extends State<GuidePageBody> {
                   ),
                   onPressed: () => _selectOption(_selectedIndex),
                   child: Text(
-                    'Continue',
+                    Lang.t('continue'),
                     style: GoogleFonts.spaceGrotesk(
                       fontSize: 16,
                       color: Colors.white,
@@ -268,27 +360,27 @@ class _GuidePageBodyState extends State<GuidePageBody> {
 
 class _GuideOptionData {
   final IconData icon;
-  final String title;
-  final String subtitle;
+  final String titleKey;
+  final String subtitleKey;
   const _GuideOptionData({
     required this.icon,
-    required this.title,
-    required this.subtitle,
+    required this.titleKey,
+    required this.subtitleKey,
   });
 }
 
 class GuideOption extends StatelessWidget {
   final IconData icon;
-  final String title;
-  final String subtitle;
+  final String titleKey;
+  final String subtitleKey;
   final bool isSelected;
   final VoidCallback onTap;
 
   const GuideOption({
     super.key,
     required this.icon,
-    required this.title,
-    required this.subtitle,
+    required this.titleKey,
+    required this.subtitleKey,
     required this.isSelected,
     required this.onTap,
   });
@@ -324,13 +416,13 @@ class GuideOption extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
+                  Text(Lang.t(titleKey),
                       style: const TextStyle(
                           color: Colors.white,
                           fontSize: 18,
                           fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
-                  Text(subtitle,
+                  Text(Lang.t(subtitleKey),
                       style: const TextStyle(
                           color: Color(0xFF9DA4B9), fontSize: 14)),
                 ],

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:nav_aif_fyp/pages/page_three.dart';
+import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -32,33 +34,60 @@ class _UseLocationPageState extends State<UseLocationPage> {
   int? _selectedIndex;
 
   final List<Map<String, dynamic>> options = [
-    {'icon': Icons.home, 'label': 'At Home'},
-    {'icon': Icons.work, 'label': 'Workplace'},
-    {'icon': Icons.school, 'label': 'College'},
-    {'icon': Icons.account_balance, 'label': 'University'},
+    {'icon': Icons.home, 'label': 'home'},
+    {'icon': Icons.work, 'label': 'work'},
+    {'icon': Icons.school, 'label': 'college'},
+    {'icon': Icons.account_balance, 'label': 'university'},
   ];
 
   @override
   void initState() {
     super.initState();
-    _speakOptions();
+    _loadPreferences();
   }
 
-  // ✅ Speak instructions and all options clearly
-  Future<void> _speakOptions() async {
+  Future<void> _loadPreferences() async {
+    await Lang.init();
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    
+    await _initTTS();
+    
+    // Only speak if voice mode is enabled
+    if (isVoiceModeEnabled) {
+      await _speakOptions();
+    }
+    
+    // Start listening for voice input
+    await _startListening();
+  }
+
+  Future<void> _initTTS() async {
     await _tts.setLanguage('en-US');
     await _tts.setSpeechRate(0.5);
     await _tts.setPitch(1.0);
     await _tts.awaitSpeakCompletion(true);
+  }
+
+  // ✅ Speak instructions and all options clearly
+  Future<void> _speakOptions() async {
+    final isUrdu = Lang.isUrdu;
+    if (isUrdu) {
+      try {
+        await _tts.setLanguage('ur-PK');
+      } catch (_) {
+        await _tts.setLanguage('en-US');
+      }
+    } else {
+      await _tts.setLanguage('en-US');
+    }
 
     // Step 1: Introduction
-    await _tts
-        .speak('Where are you right now? Please select your current location.');
+    await _tts.speak(Lang.t('where_are_you'));
     await _tts.awaitSpeakCompletion(true);
 
     // Step 2: Speak each option in order
     for (var option in options) {
-      await _tts.speak('${option['label']}.');
+      await _tts.speak('${Lang.t(option['label'])}.');
       await _tts.awaitSpeakCompletion(true);
     }
 
@@ -89,31 +118,55 @@ class _UseLocationPageState extends State<UseLocationPage> {
     if (available) {
       setState(() => _isListening = true);
       _speech.listen(
-        localeId: 'en-US',
+        localeId: Lang.speechLocaleId,
         onResult: (result) {
           String recognized = result.recognizedWords.toLowerCase().trim();
-          debugPrint('🎙 Recognized: $recognized');
-          _processCommand(recognized);
+          if (recognized.isNotEmpty) {
+            debugPrint('🎙 Recognized: $recognized');
+            _processCommand(recognized);
+          }
         },
       );
     }
   }
 
   // ✅ Interpret recognized voice command
-  void _processCommand(String recognized) {
+  void _processCommand(String recognized) async {
     int? selectedIndex;
-    if (recognized.contains('home')) {
+    
+    // Support both English and Urdu commands
+    if (recognized.contains('home') || recognized.contains('گھر')) {
       selectedIndex = 0;
-    } else if (recognized.contains('work')) {
+    } else if (recognized.contains('work') || recognized.contains('دفتر')) {
       selectedIndex = 1;
-    } else if (recognized.contains('college')) {
+    } else if (recognized.contains('college') || recognized.contains('کالج')) {
       selectedIndex = 2;
-    } else if (recognized.contains('university')) {
+    } else if (recognized.contains('university') || recognized.contains('یونیورسٹی')) {
       selectedIndex = 3;
     }
 
     if (selectedIndex != null) {
       _selectLocationAndNavigate(selectedIndex);
+    } else if (recognized.length > 2) {
+      // Command not recognized, ask to repeat
+      await _askToRepeat();
+    }
+  }
+
+  Future<void> _askToRepeat() async {
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (isVoiceModeEnabled) {
+      await _initTTS();
+      final isUrdu = Lang.isUrdu;
+      if (isUrdu) {
+        try {
+          await _tts.setLanguage('ur-PK');
+        } catch (_) {
+          await _tts.setLanguage('en-US');
+        }
+      }
+      await _tts.speak(Lang.t('please_repeat'));
+      await _tts.awaitSpeakCompletion(true);
     }
   }
 
@@ -125,7 +178,7 @@ class _UseLocationPageState extends State<UseLocationPage> {
       _selectedIndex = index;
     });
 
-    String location = options[index]['label'];
+    String location = Lang.t(options[index]['label']);
 
     await _tts
         .speak('You selected $location. Moving to navigation mode selection.');
@@ -151,9 +204,9 @@ class _UseLocationPageState extends State<UseLocationPage> {
             Navigator.pop(context);
           },
         ),
-        title: const Text(
-          'Select Location',
-          style: TextStyle(color: Colors.white),
+        title: Text(
+          Lang.t('select_location'),
+          style: const TextStyle(color: Colors.white),
         ),
       ),
       body: Padding(
@@ -162,7 +215,7 @@ class _UseLocationPageState extends State<UseLocationPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Where are you right now? Please select your location.',
+              Lang.t('where_are_you'),
               style: GoogleFonts.spaceGrotesk(
                 color: Colors.white,
                 fontSize: 24,
@@ -242,7 +295,7 @@ class _UseLocationPageState extends State<UseLocationPage> {
                             ),
                             const SizedBox(width: 20),
                             Text(
-                              option['label'],
+                              Lang.t(option['label']),
                               style: GoogleFonts.spaceGrotesk(
                                 color: Colors.white,
                                 fontSize: 18,
@@ -275,9 +328,9 @@ class _UseLocationPageState extends State<UseLocationPage> {
                       _selectLocationAndNavigate(_selectedIndex!);
                     }
                   : null,
-              child: const Text(
-                'Continue',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              child: Text(
+                Lang.t('continue'),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ),
           ],

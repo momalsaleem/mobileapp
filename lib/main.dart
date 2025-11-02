@@ -4,8 +4,13 @@ import 'dart:ui' as ui;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:nav_aif_fyp/services/preferences_manager.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Initialize preferences on app startup
+  await PreferencesManager.init();
+  await Lang.init();
   runApp(const NavAIApp());
 }
 
@@ -73,18 +78,26 @@ class _NavAIHomePageState extends State<NavAIHomePage>
   }
 
   Future<void> _speakEnglishThenUrdu() async {
+    await Lang.init();
+    
+    // First speak in English
     await _flutterTts.setLanguage('en-US');
     await _flutterTts.speak(
-      'Welcome to Nav AI. Smart navigation, designed for you. Say start with voice or continue by tapping.',
+      'Welcome to Nav AI. Smart navigation, designed for you. Please say English or Urdu to select your language.',
     );
-
+    
+    // Wait for English speech to complete
     await Future.delayed(const Duration(seconds: 5));
-
+    
+    // Then speak in Urdu
     try {
-      if (false) {
-        // placeholder for optional TTSPreference check
-      }
-    } catch (_) {}
+      await _flutterTts.setLanguage('ur-PK');
+      await _flutterTts.speak(
+        'نیو اے آئی میں خوش آمدید۔ اپنی زبان منتخب کرنے کے لیے انگلش یا اردو کہیں۔',
+      );
+    } catch (e) {
+      debugPrint('Error speaking Urdu: $e');
+    }
   }
 
   void _initAnimations() {
@@ -117,6 +130,7 @@ class _NavAIHomePageState extends State<NavAIHomePage>
   }
 
   void _startListening() async {
+    await Lang.init();
     bool available = await _speech.initialize(
       onStatus: (val) {
         if (val == "done" && !_isListening) {
@@ -131,11 +145,13 @@ class _NavAIHomePageState extends State<NavAIHomePage>
 
     if (available) {
       setState(() => _isListening = true);
+      // Listen for both English and Urdu
       _speech.listen(
-        localeId: 'en-US',
         onResult: (result) {
           String recognized = result.recognizedWords.toLowerCase().trim();
-          _processCommand(recognized);
+          if (recognized.isNotEmpty) {
+            _processCommand(recognized);
+          }
         },
       );
     } else {
@@ -143,21 +159,66 @@ class _NavAIHomePageState extends State<NavAIHomePage>
     }
   }
 
-  void _processCommand(String recognized) {
+  void _processCommand(String recognized) async {
     debugPrint("🎙 Recognized: $recognized");
-    if (recognized.contains('start') ||
+    
+    bool commandMatched = false;
+    
+    // Check for language selection commands in both English and Urdu
+    if (recognized.contains('english') || 
+        recognized.contains('urdu') || 
+        recognized.contains('اردو') || 
+        recognized.contains('انگلش')) {
+      // Navigate to language selection page
+      Navigator.pushNamed(context, '/lang');
+      commandMatched = true;
+    }
+    // Handle voice mode commands (support both English and Urdu)
+    else if (recognized.contains('continue with voice') ||
         recognized.contains('voice') ||
-        recognized.contains('continue with voice') ||
         recognized.contains('start with voice') ||
+        recognized.contains('start') ||
         recognized.contains('آواز') ||
         recognized.contains('شروع')) {
+      // Enable voice mode and save preference
+      await PreferencesManager.setVoiceModeEnabled(true);
+      debugPrint("✅ Voice mode enabled and saved");
+      commandMatched = true;
       _navigateToLang();
     } else if (recognized.contains('touch') ||
-        recognized.contains('continue') ||
         recognized.contains('tap') ||
-        recognized.contains('ٹچ') ||
-        recognized.contains('جاری')) {
+        recognized.contains('ٹچ')) {
+      // Disable voice mode and save preference
+      await PreferencesManager.setVoiceModeEnabled(false);
+      debugPrint("✅ Voice mode disabled and saved");
+      commandMatched = true;
       _navigateToLang();
+    } else if (recognized.contains('continue')) {
+      // Generic continue - just navigate
+      commandMatched = true;
+      _navigateToLang();
+    }
+    
+    // If command not matched, ask user to repeat politely
+    if (!commandMatched && recognized.length > 2) {
+      await _askToRepeat();
+    }
+  }
+
+  Future<void> _askToRepeat() async {
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (isVoiceModeEnabled) {
+      await _initTTS();
+      final isUrdu = Lang.isUrdu;
+      if (isUrdu) {
+        try {
+          await _flutterTts.setLanguage('ur-PK');
+        } catch (_) {
+          await _flutterTts.setLanguage('en-US');
+        }
+      }
+      await _flutterTts.speak(Lang.t('please_repeat'));
+      await _flutterTts.awaitSpeakCompletion(true);
     }
   }
 
@@ -289,6 +350,10 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                               Icons.mic,
                               const Color(0xFF2563eb),
                               Colors.white,
+                              onTap: () async {
+                                await PreferencesManager.setVoiceModeEnabled(true);
+                                _navigateToLang();
+                              },
                             ),
                             _buildButton(
                               'Continue with Touch / ٹچ کے ذریعے جاری رکھیں',
@@ -296,6 +361,10 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                               const Color(0xFF1f2937),
                               const Color(0xFFd1d5db),
                               borderColor: const Color(0xFF374151),
+                              onTap: () async {
+                                await PreferencesManager.setVoiceModeEnabled(false);
+                                _navigateToLang();
+                              },
                             ),
                             Padding(
                               padding: const EdgeInsets.only(top: 10),
@@ -360,12 +429,12 @@ class _NavAIHomePageState extends State<NavAIHomePage>
 
   Widget _buildButton(
       String text, IconData icon, Color background, Color foreground,
-      {Color? borderColor}) {
+      {Color? borderColor, VoidCallback? onTap}) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 5),
       width: double.infinity,
       child: ElevatedButton(
-        onPressed: _navigateToLang,
+        onPressed: onTap ?? _navigateToLang,
         style: ElevatedButton.styleFrom(
           backgroundColor: background,
           foregroundColor: foreground,

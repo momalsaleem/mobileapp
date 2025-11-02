@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:nav_aif_fyp/pages/page_two.dart';
+import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
@@ -16,20 +18,49 @@ class _NameInputPageState extends State<NameInputPage> {
   final TextEditingController _nameController = TextEditingController();
   bool _isListening = false;
 
-  String get _instructionText => 'What should NavAI call you? You can say your name or type it in the text field.';
+  String get _instructionText => Lang.t('name_question');
 
   @override
   void initState() {
     super.initState();
+    _loadPreferences();
+  }
+
+  Future<void> _loadPreferences() async {
+    await Lang.init();
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    
     _initTTS();
+    
+    // Only speak if voice mode is enabled
+    if (isVoiceModeEnabled) {
+      _speakInstruction();
+    }
+    
+    // Start listening for voice input
     _startListening();
   }
 
-  void _initTTS() {
-    // Always speak in English
-    _tts.setLanguage('en-US');
-    _tts.setSpeechRate(0.5);
-    _tts.speak(_instructionText);
+  Future<void> _initTTS() async {
+    await _tts.setLanguage('en-US');
+    await _tts.setSpeechRate(0.5);
+    await _tts.setPitch(1.0);
+  }
+
+  Future<void> _speakInstruction() async {
+    final isUrdu = Lang.isUrdu;
+    if (isUrdu) {
+      // For Urdu, use Urdu TTS if available
+      try {
+        await _tts.setLanguage('ur-PK');
+      } catch (_) {
+        await _tts.setLanguage('en-US');
+      }
+    } else {
+      await _tts.setLanguage('en-US');
+    }
+    
+    await _tts.speak(_instructionText);
   }
 
   void _startListening() {
@@ -47,10 +78,12 @@ class _NameInputPageState extends State<NameInputPage> {
       if (available) {
         setState(() => _isListening = true);
         _speech.listen(
-          localeId: 'en-US',
+          localeId: Lang.speechLocaleId,
           onResult: (result) {
             String recognized = result.recognizedWords.toLowerCase().trim();
-            _processCommand(recognized);
+            if (recognized.isNotEmpty) {
+              _processCommand(recognized);
+            }
           },
         );
       } else {
@@ -59,22 +92,58 @@ class _NameInputPageState extends State<NameInputPage> {
     });
   }
 
-  void _processCommand(String recognized) {
+  void _processCommand(String recognized) async {
     debugPrint("🎙 Name Input Recognized: $recognized");
     
     // If user says their name, set it in the text field and navigate
-    if (recognized.isNotEmpty && !recognized.contains('continue') && !recognized.contains('next')) {
+    if (recognized.isNotEmpty && 
+        !recognized.contains('continue') && 
+        !recognized.contains('next') &&
+        recognized.length > 1) {
       _speech.stop();
       setState(() {
         _isListening = false;
         _nameController.text = recognized; // Set the recognized name
       });
       
-      // Speak confirmation and navigate after a short delay
-      _tts.speak('Hello $recognized. Moving to location selection.');
-      Future.delayed(const Duration(seconds: 2), () {
+      final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+      if (isVoiceModeEnabled) {
+        await _initTTS();
+        final isUrdu = Lang.isUrdu;
+        if (isUrdu) {
+          try {
+            await _tts.setLanguage('ur-PK');
+          } catch (_) {
+            await _tts.setLanguage('en-US');
+          }
+        }
+        await _tts.speak('Hello $recognized. ${Lang.t('continue')}.');
+        await _tts.awaitSpeakCompletion(true);
+      }
+      
+      Future.delayed(const Duration(milliseconds: 500), () {
         _navigateToNext();
       });
+    } else if (recognized.isNotEmpty && recognized.length > 2) {
+      // Command not recognized, ask to repeat
+      await _askToRepeat();
+    }
+  }
+
+  Future<void> _askToRepeat() async {
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (isVoiceModeEnabled) {
+      await _initTTS();
+      final isUrdu = Lang.isUrdu;
+      if (isUrdu) {
+        try {
+          await _tts.setLanguage('ur-PK');
+        } catch (_) {
+          await _tts.setLanguage('en-US');
+        }
+      }
+      await _tts.speak(Lang.t('please_repeat'));
+      await _tts.awaitSpeakCompletion(true);
     }
   }
 
@@ -120,9 +189,9 @@ class _NameInputPageState extends State<NameInputPage> {
                         ),
                       ),
                       const Spacer(),
-                      const Text(
-                        'NavAI',
-                        style: TextStyle(
+                      Text(
+                        Lang.t('navai'),
+                        style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
@@ -148,7 +217,7 @@ class _NameInputPageState extends State<NameInputPage> {
                       TextField(
                         controller: _nameController,
                         decoration: InputDecoration(
-                          hintText: "Your name",
+                          hintText: Lang.t('your_name'),
                           filled: true,
                           fillColor: Colors.white.withValues(alpha: 0.05),
                           enabledBorder: OutlineInputBorder(
@@ -230,9 +299,9 @@ class _NameInputPageState extends State<NameInputPage> {
                     onPressed: () {
                       _navigateToNext();
                     },
-                    child: const Text(
-                      "Save & Continue",
-                      style: TextStyle(
+                    child: Text(
+                      Lang.t('save_continue'),
+                      style: const TextStyle(
                         fontSize: 18,
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
