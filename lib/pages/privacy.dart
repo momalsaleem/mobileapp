@@ -3,6 +3,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:nav_aif_fyp/pages/lang.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
+import 'package:nav_aif_fyp/services/voice_manager.dart';
 
 class PrivacyPage extends StatefulWidget {
   const PrivacyPage({super.key});
@@ -27,9 +28,10 @@ class _PrivacyPageState extends State<PrivacyPage> {
     await _initTTS();
     final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
     if (isVoiceModeEnabled) {
-      await _speakWelcome();
+      await VoiceManager.safeSpeak(_tts, Lang.t('privacy_title'));
+      await VoiceManager.safeAwaitSpeakCompletion(_tts);
+      await _startListening();
     }
-    _startListening();
   }
 
   Future<void> _initTTS() async {
@@ -45,13 +47,9 @@ class _PrivacyPageState extends State<PrivacyPage> {
     await _tts.setSpeechRate(0.5);
   }
 
-  Future<void> _speakWelcome() async {
-    await _tts.speak(Lang.t('privacy_title'));
-    await _tts.awaitSpeakCompletion(true);
-  }
-
-  void _startListening() {
-    _speech.initialize(
+  Future<void> _startListening() async {
+    final available = await VoiceManager.safeInitializeSpeech(
+      _speech,
       onStatus: (val) {
         if (val == "done" && !_isListening) {
           _startListening();
@@ -60,52 +58,57 @@ class _PrivacyPageState extends State<PrivacyPage> {
       onError: (val) {
         setState(() => _isListening = false);
       },
-    ).then((available) {
-      if (available) {
-        setState(() => _isListening = true);
-        _speech.listen(
-          localeId: Lang.speechLocaleId,
-          onResult: (result) {
-            final recognized = result.recognizedWords.toLowerCase().trim();
-            if (recognized.isNotEmpty) {
-              _processCommand(recognized);
-            }
-          },
-        );
-      } else {
-        setState(() => _isListening = false);
-      }
-    });
+    );
+
+    if (available) {
+      setState(() => _isListening = true);
+      await VoiceManager.safeListen(
+        _speech,
+        localeId: Lang.speechLocaleId,
+        onResult: (result) {
+          final recognized = (result.recognizedWords ?? '').toString().toLowerCase().trim();
+          if (recognized.isNotEmpty) {
+            _processCommand(recognized);
+          }
+        },
+      );
+    } else {
+      setState(() => _isListening = false);
+    }
   }
 
   Future<void> _askToRepeat() async {
     final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
     if (isVoiceModeEnabled) {
-      await _initTTS();
-      await _tts.speak(Lang.t('please_repeat'));
-      await _tts.awaitSpeakCompletion(true);
-      _startListening();
+      await VoiceManager.safeSpeak(_tts, Lang.t('please_repeat'));
+      await VoiceManager.safeAwaitSpeakCompletion(_tts);
+      await _startListening();
     }
   }
 
-  void _processCommand(String recognized) async {
+  Future<void> _processCommand(String recognized) async {
     // Example: respond to basic terms – extend as needed
     bool matched = false;
     if (recognized.contains('location') || recognized.contains('لوکیشن')) {
       matched = true;
-      await _tts.speak(Lang.t('location_services'));
+      await VoiceManager.safeSpeak(_tts, Lang.t('location_services'));
+      await VoiceManager.safeAwaitSpeakCompletion(_tts);
     } else if (recognized.contains('security') || recognized.contains('سیکیورٹی')) {
       matched = true;
-      await _tts.speak(Lang.t('data_security'));
+      await VoiceManager.safeSpeak(_tts, Lang.t('data_security'));
+      await VoiceManager.safeAwaitSpeakCompletion(_tts);
     } else if (recognized.contains('sharing') || recognized.contains('شیئر')) {
       matched = true;
-      await _tts.speak(Lang.t('data_sharing'));
+      await VoiceManager.safeSpeak(_tts, Lang.t('data_sharing'));
+      await VoiceManager.safeAwaitSpeakCompletion(_tts);
     } else if (recognized.contains('delete') || recognized.contains('حذف')) {
       matched = true;
-      await _tts.speak(Lang.t('delete_data'));
+      await VoiceManager.safeSpeak(_tts, Lang.t('delete_data'));
+      await VoiceManager.safeAwaitSpeakCompletion(_tts);
     } else if (recognized.contains('policy') || recognized.contains('پالیسی')) {
       matched = true;
-      await _tts.speak(Lang.t('privacy_policy'));
+      await VoiceManager.safeSpeak(_tts, Lang.t('privacy_policy'));
+      await VoiceManager.safeAwaitSpeakCompletion(_tts);
     }
     if (!matched && recognized.length > 2) {
       await _askToRepeat();
@@ -234,13 +237,14 @@ class _PrivacyPageState extends State<PrivacyPage> {
     final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
     if (isVoiceModeEnabled) {
       await _initTTS();
-      await _tts.speak(text);
+      await VoiceManager.safeSpeak(_tts, text);
+      await VoiceManager.safeAwaitSpeakCompletion(_tts);
     }
   }
 
   @override
   void dispose() {
-    _speech.stop();
+    VoiceManager.safeStopListening(_speech);
     _tts.stop();
     super.dispose();
   }

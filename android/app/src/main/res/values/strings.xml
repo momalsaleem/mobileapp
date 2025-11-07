@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">NavAIF</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="welcome_message">Welcome to NavAIF</string>
+</resources>

@@ -6,6 +6,7 @@ import 'package:nav_aif_fyp/pages/lang.dart';
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:nav_aif_fyp/services/voice_manager.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -42,13 +43,11 @@ class _SettingsPageState extends State<SettingsPage> {
     
     await _initTTS();
     
-    // Only speak if voice mode is enabled - don't await this
+    // Only speak and start listening if voice mode is enabled
     if (isVoiceModeEnabled) {
-      _speakWelcome(); // Don't await - let it run in background
+      await _speakWelcome();
+      await _startListening();
     }
-    
-    // Start listening for voice input
-    _startListening();
   }
 
   Future<void> _initTTS() async {
@@ -67,12 +66,13 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _speakWelcome() async {
-    await _tts.speak(Lang.t('settings_welcome'));
-    await _tts.awaitSpeakCompletion(true);
+    await VoiceManager.safeSpeak(_tts, Lang.t('settings_welcome'));
+    await VoiceManager.safeAwaitSpeakCompletion(_tts);
   }
 
-  void _startListening() async {
-    bool available = await _speech.initialize(
+  Future<void> _startListening() async {
+    final available = await VoiceManager.safeInitializeSpeech(
+      _speech,
       onStatus: (val) {
         if (val == "done" && !_isListening) {
           _startListening();
@@ -86,10 +86,11 @@ class _SettingsPageState extends State<SettingsPage> {
 
     if (available) {
       setState(() => _isListening = true);
-      _speech.listen(
+      await VoiceManager.safeListen(
+        _speech,
         localeId: Lang.speechLocaleId,
         onResult: (result) {
-          String recognized = result.recognizedWords.toLowerCase().trim();
+          String recognized = (result.recognizedWords ?? '').toString().toLowerCase().trim();
           if (recognized.isNotEmpty) {
             _processCommand(recognized);
           }
@@ -100,7 +101,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  void _processCommand(String recognized) async {
+  Future<void> _processCommand(String recognized) async {
     debugPrint("🎙 Settings Recognized: $recognized");
     
     await _speech.stop();
@@ -111,15 +112,15 @@ class _SettingsPageState extends State<SettingsPage> {
     
     if (recognized.contains('account') || recognized.contains('اکاؤنٹ')) {
       if (isVoiceModeEnabled) {
-        await _tts.speak('${Lang.t('opening')} ${Lang.t('account')}.');
-        await _tts.awaitSpeakCompletion(true);
+        await VoiceManager.safeSpeak(_tts, '${Lang.t('opening')} ${Lang.t('account')}.');
+        await VoiceManager.safeAwaitSpeakCompletion(_tts);
       }
       commandMatched = true;
       // TODO: Navigate to account settings
     } else if (recognized.contains('privacy') || recognized.contains('پرائیویسی')) {
       if (isVoiceModeEnabled) {
-        await _tts.speak('${Lang.t('opening')} ${Lang.t('privacy')}.');
-        await _tts.awaitSpeakCompletion(true);
+        await VoiceManager.safeSpeak(_tts, '${Lang.t('opening')} ${Lang.t('privacy')}.');
+        await VoiceManager.safeAwaitSpeakCompletion(_tts);
       }
       commandMatched = true;
       if (mounted) {
@@ -129,15 +130,15 @@ class _SettingsPageState extends State<SettingsPage> {
       }
     } else if (recognized.contains('notification') || recognized.contains('نوٹیفیکیشن')) {
       if (isVoiceModeEnabled) {
-        await _tts.speak('${Lang.t('opening')} ${Lang.t('notifications')}.');
-        await _tts.awaitSpeakCompletion(true);
+        await VoiceManager.safeSpeak(_tts, '${Lang.t('opening')} ${Lang.t('notifications')}.');
+        await VoiceManager.safeAwaitSpeakCompletion(_tts);
       }
       commandMatched = true;
       // TODO: Navigate to notification settings
     } else if (recognized.contains('about') || recognized.contains('مزید معلومات')) {
       if (isVoiceModeEnabled) {
-        await _tts.speak('${Lang.t('opening')} ${Lang.t('about')}.');
-        await _tts.awaitSpeakCompletion(true);
+        await VoiceManager.safeSpeak(_tts, '${Lang.t('opening')} ${Lang.t('about')}.');
+        await VoiceManager.safeAwaitSpeakCompletion(_tts);
       }
       commandMatched = true;
       // TODO: Show about dialog
@@ -156,9 +157,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _askToRepeat() async {
     final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
     if (isVoiceModeEnabled) {
-      await _tts.speak(Lang.t('please_repeat'));
-      await _tts.awaitSpeakCompletion(true);
-      _startListening();
+      await VoiceManager.safeSpeak(_tts, Lang.t('please_repeat'));
+      await VoiceManager.safeAwaitSpeakCompletion(_tts);
+      await _startListening();
     }
   }
 
@@ -423,7 +424,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   void dispose() {
-    _speech.stop();
+    VoiceManager.safeStopListening(_speech);
     _tts.stop();
     super.dispose();
   }

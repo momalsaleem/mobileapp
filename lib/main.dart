@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:permission_handler/permission_handler.dart';
 import 'package:nav_aif_fyp/pages/lang.dart';
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Initialize preferences on app startup
   await PreferencesManager.init();
   await Lang.init();
   runApp(const NavAIApp());
@@ -42,64 +43,23 @@ class _NavAIHomePageState extends State<NavAIHomePage>
   final FlutterTts _flutterTts = FlutterTts();
   final stt.SpeechToText _speech = stt.SpeechToText();
 
+  // Voice interaction state
   bool _isSpeaking = false;
   bool _isListening = false;
-  final bool _urduMode = false;
+  bool _bilingualIntroComplete = false;
+  bool _microphoneReady = false;
+  
+  // Status messages for accessibility
+  String _statusMessage = 'Initializing...';
 
   @override
   void initState() {
     super.initState();
-
-    _initTTS().then((_) {
-      _speakEnglishThenUrdu().then((_) {
-        _startListening();
-      });
-    });
-
     _initAnimations();
+    _initializeVoiceSystem();
   }
 
-  Future<void> _initTTS() async {
-    await _flutterTts.setSpeechRate(0.5);
-    await _flutterTts.setPitch(1.0);
-    await _flutterTts.awaitSpeakCompletion(true);
-
-    _flutterTts.setStartHandler(() {
-      setState(() => _isSpeaking = true);
-    });
-
-    _flutterTts.setCompletionHandler(() {
-      setState(() => _isSpeaking = false);
-    });
-
-    _flutterTts.setErrorHandler((message) {
-      setState(() => _isSpeaking = false);
-    });
-  }
-
-  Future<void> _speakEnglishThenUrdu() async {
-    await Lang.init();
-    
-    // First speak in English
-    await _flutterTts.setLanguage('en-US');
-    await _flutterTts.speak(
-      'Welcome to Nav AI. Smart navigation, designed for you. Please say English or Urdu to select your language.',
-    );
-    
-    // Wait for English speech to complete
-    await Future.delayed(const Duration(seconds: 5));
-    
-    // Then speak in Urdu
-    try {
-      await _flutterTts.setLanguage('ur-PK');
-      await _flutterTts.speak(
-        'نیو اے آئی میں خوش آمدید۔ اپنی زبان منتخب کرنے کے لیے انگلش یا اردو کہیں۔',
-      );
-    } catch (e) {
-      debugPrint('Error speaking Urdu: $e');
-    }
-  }
-
+  /// Initialize animations
   void _initAnimations() {
     _pathController = AnimationController(
       vsync: this,
@@ -119,9 +79,11 @@ class _NavAIHomePageState extends State<NavAIHomePage>
     _starController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         Future.delayed(const Duration(milliseconds: 500), () {
-          _pathController.reset();
-          _starController.reset();
-          _pathController.forward(from: 0.0);
+          if (mounted) {
+            _pathController.reset();
+            _starController.reset();
+            _pathController.forward(from: 0.0);
+          }
         });
       }
     });
@@ -129,116 +91,396 @@ class _NavAIHomePageState extends State<NavAIHomePage>
     _pathController.forward();
   }
 
-  void _startListening() async {
-    await Lang.init();
-    bool available = await _speech.initialize(
-      onStatus: (val) {
-        if (val == "done" && !_isListening) {
-          _startListening();
-        }
-      },
-      onError: (val) {
-        debugPrint('Speech Error: $val');
-        setState(() => _isListening = false);
-      },
-    );
+  /// Initialize complete voice system with bilingual support
+  Future<void> _initializeVoiceSystem() async {
+    try {
+      setState(() => _statusMessage = 'Initializing voice system...');
 
-    if (available) {
-      setState(() => _isListening = true);
-      // Listen for both English and Urdu
-      _speech.listen(
-        onResult: (result) {
-          String recognized = result.recognizedWords.toLowerCase().trim();
-          if (recognized.isNotEmpty) {
-            _processCommand(recognized);
+      // Step 1: Initialize TTS
+      await _initTTS();
+      
+      // Step 2: Initialize microphone in background (non-blocking)
+      _initMicrophoneInBackground();
+      
+      // Step 3: Start bilingual introduction
+      await _speakBilingualIntroduction();
+      
+      // Step 4: Wait for microphone to be ready
+      await _waitForMicrophone();
+      
+      // Step 5: Start listening for commands
+      await _startListening();
+      
+    } catch (e) {
+      debugPrint('❌ Voice system initialization error: $e');
+      setState(() => _statusMessage = 'Voice system unavailable. Touch mode enabled.');
+      // Fall back to touch-only mode
+    }
+  }
+
+  /// Initialize TTS with proper configuration
+  Future<void> _initTTS() async {
+    await _flutterTts.setLanguage('en-US');
+    await _flutterTts.setSpeechRate(0.5); // Slower for clarity
+    await _flutterTts.setPitch(1.0);
+    await _flutterTts.setVolume(1.0);
+    await _flutterTts.awaitSpeakCompletion(true);
+
+    // Setup TTS event handlers
+    _flutterTts.setStartHandler(() {
+      if (mounted) setState(() => _isSpeaking = true);
+    });
+
+    _flutterTts.setCompletionHandler(() {
+      if (mounted) setState(() => _isSpeaking = false);
+    });
+
+    _flutterTts.setErrorHandler((message) {
+      debugPrint('TTS Error: $message');
+      if (mounted) setState(() => _isSpeaking = false);
+    });
+
+    debugPrint('✅ TTS initialized');
+  }
+
+  /// Initialize microphone in background (non-blocking)
+  void _initMicrophoneInBackground() {
+    Future.microtask(() async {
+      try {
+        setState(() => _statusMessage = 'Preparing microphone...');
+        
+        bool available = await _speech.initialize(
+          onStatus: (status) {
+            debugPrint('🎙️ Speech status: $status');
+            if (status == 'done' && _isListening) {
+              // Restart listening if it stops
+              _startListening();
+            }
+          },
+          onError: (error) {
+            debugPrint('🎙️ Speech error: $error');
+            if (mounted) {
+              setState(() => _statusMessage = 'Microphone error. Using touch mode.');
+            }
+          },
+        );
+
+        if (available) {
+          debugPrint('✅ Microphone initialized and ready');
+          if (mounted) {
+            setState(() {
+              _microphoneReady = true;
+              _statusMessage = 'Microphone ready';
+            });
+          }
+        } else {
+          debugPrint('❌ Microphone not available');
+          if (mounted) {
+            setState(() => _statusMessage = 'Microphone unavailable. Touch mode only.');
+          }
+        }
+      } catch (e) {
+        debugPrint('❌ Microphone initialization error: $e');
+      }
+    });
+  }
+
+  /// Initialize microphone immediately and await readiness.
+  Future<void> _initMicrophoneNow() async {
+    try {
+      setState(() => _statusMessage = 'Requesting microphone permission...');
+
+      final micStatus = await Permission.microphone.request();
+      if (!micStatus.isGranted) {
+        debugPrint('Microphone permission denied');
+        setState(() => _statusMessage = 'Microphone permission denied.');
+        _microphoneReady = false;
+        return;
+      }
+
+      setState(() => _statusMessage = 'Initializing microphone...');
+      final available = await _speech.initialize(
+        onStatus: (status) {
+          debugPrint('🎙️ Speech status (now): $status');
+          if (status == 'done' && _isListening) {
+            _startListening();
           }
         },
+        onError: (error) {
+          debugPrint('🎙️ Speech error (now): $error');
+          if (mounted) setState(() => _statusMessage = 'Microphone error');
+        },
       );
-    } else {
-      setState(() => _isListening = false);
+
+      if (available) {
+        debugPrint('✅ Microphone initialized (now)');
+        if (mounted) {
+          setState(() {
+            _microphoneReady = true;
+            _statusMessage = 'Microphone ready';
+          });
+        }
+      } else {
+        debugPrint('❌ Microphone not available (now)');
+        if (mounted) setState(() => _statusMessage = 'Microphone unavailable');
+        _microphoneReady = false;
+      }
+    } catch (e) {
+      debugPrint('❌ Microphone initialization error (now): $e');
+      if (mounted) setState(() => _statusMessage = 'Microphone init error');
+      _microphoneReady = false;
     }
   }
 
+  /// Wait for microphone to be ready (with timeout)
+  Future<void> _waitForMicrophone() async {
+    int waitCount = 0;
+    const maxWait = 10; // 5 seconds max
+
+    while (!_microphoneReady && waitCount < maxWait) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      waitCount++;
+    }
+
+    if (!_microphoneReady) {
+      debugPrint('⚠️ Microphone initialization timeout. Proceeding anyway.');
+    }
+  }
+
+  /// Speak bilingual introduction (English first, then Urdu)
+  Future<void> _speakBilingualIntroduction() async {
+    setState(() => _statusMessage = 'Speaking introduction...');
+
+    try {
+      // === ENGLISH INTRODUCTION ===
+      await _flutterTts.setLanguage('en-US');
+      await _flutterTts.speak(
+        'Welcome to Nav AI. Smart navigation, designed for you. '
+        'You can say: Continue with voice, or Continue with touch. '
+        'You can also just say: voice, or touch.',
+      );
+      await _flutterTts.awaitSpeakCompletion(true);
+      
+      // Pause between languages
+      await Future.delayed(const Duration(milliseconds: 1000));
+
+      // === URDU INTRODUCTION ===
+      try {
+        await _flutterTts.setLanguage('ur-PK');
+        await _flutterTts.speak(
+          'نیو اے آئی میں خوش آمدید۔ سمارٹ نیویگیشن، آپ کے لیے تیار کی گئی۔ '
+          'آپ کہہ سکتے ہیں: آواز کے ساتھ جاری رکھیں، یا ٹچ کے ساتھ جاری رکھیں۔ '
+          'آپ صرف یہ بھی کہہ سکتے ہیں: آواز، یا ٹچ۔',
+        );
+        await _flutterTts.awaitSpeakCompletion(true);
+      } catch (e) {
+        debugPrint('⚠️ Urdu TTS not available, skipping: $e');
+        // Continue even if Urdu TTS fails
+      }
+
+      // Pause before listening
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      setState(() {
+        _bilingualIntroComplete = true;
+        _statusMessage = 'Listening for your command...';
+      });
+
+      debugPrint('✅ Bilingual introduction complete');
+    } catch (e) {
+      debugPrint('❌ Error during introduction: $e');
+      setState(() => _statusMessage = 'Introduction error. Touch mode available.');
+    }
+  }
+
+  /// Start listening for voice commands
+  Future<void> _startListening() async {
+    if (!_microphoneReady) {
+      debugPrint('⚠️ Cannot start listening: microphone not ready');
+      return;
+    }
+
+    if (!_bilingualIntroComplete) {
+      debugPrint('⚠️ Cannot start listening: introduction not complete');
+      return;
+    }
+
+    try {
+      setState(() {
+        _isListening = true;
+        _statusMessage = 'Listening... Say "voice" or "touch"';
+      });
+
+      await _speech.listen(
+        localeId: 'en-US', // Use English for initial detection
+        onResult: (result) {
+          if (result.finalResult) {
+            String recognized = result.recognizedWords.toLowerCase().trim();
+            if (recognized.isNotEmpty) {
+              _processCommand(recognized);
+            }
+          }
+        },
+        listenFor: const Duration(seconds: 30), // Listen for 30 seconds
+        pauseFor: const Duration(seconds: 5), // 5 second pause threshold
+        partialResults: false,
+      );
+    } catch (e) {
+      debugPrint('❌ Error starting listening: $e');
+      setState(() {
+        _isListening = false;
+        _statusMessage = 'Listening error. Use touch controls.';
+      });
+    }
+  }
+
+  /// Process recognized voice command
   void _processCommand(String recognized) async {
-    debugPrint("🎙 Recognized: $recognized");
-    
+    debugPrint('🎙️ Recognized command: "$recognized"');
+
+    // Stop listening while processing
+    await _speech.stop();
+    setState(() => _isListening = false);
+
     bool commandMatched = false;
-    
-    // Check for language selection commands in both English and Urdu
-    if (recognized.contains('english') || 
-        recognized.contains('urdu') || 
-        recognized.contains('اردو') || 
-        recognized.contains('انگلش')) {
-      // Navigate to language selection page
-      Navigator.pushNamed(context, '/lang');
+
+    // === VOICE MODE COMMANDS ===
+    if (_matchesVoiceCommand(recognized)) {
       commandMatched = true;
+      await _handleVoiceMode();
     }
-    // Handle voice mode commands (support both English and Urdu)
-    else if (recognized.contains('continue with voice') ||
-        recognized.contains('voice') ||
-        recognized.contains('start with voice') ||
-        recognized.contains('start') ||
-        recognized.contains('آواز') ||
-        recognized.contains('شروع')) {
-      // Enable voice mode and save preference
-      await PreferencesManager.setVoiceModeEnabled(true);
-      debugPrint("✅ Voice mode enabled and saved");
+    // === TOUCH MODE COMMANDS ===
+    else if (_matchesTouchCommand(recognized)) {
       commandMatched = true;
-      _navigateToLang();
-    } else if (recognized.contains('touch') ||
-        recognized.contains('tap') ||
-        recognized.contains('ٹچ')) {
-      // Disable voice mode and save preference
-      await PreferencesManager.setVoiceModeEnabled(false);
-      debugPrint("✅ Voice mode disabled and saved");
-      commandMatched = true;
-      _navigateToLang();
-    } else if (recognized.contains('continue')) {
-      // Generic continue - just navigate
-      commandMatched = true;
-      _navigateToLang();
+      await _handleTouchMode();
     }
-    
-    // If command not matched, ask user to repeat politely
+
+    // If command not recognized, ask to repeat
     if (!commandMatched && recognized.length > 2) {
       await _askToRepeat();
+    } else if (!commandMatched) {
+      // Resume listening for very short/empty input
+      await _startListening();
     }
   }
 
+  /// Check if input matches voice mode command
+  bool _matchesVoiceCommand(String input) {
+    const voiceKeywords = [
+      'voice',
+      'continue with voice',
+      'start with voice',
+      'voice mode',
+      'awaz', // Urdu transliteration
+      'آواز', // Urdu script
+      'آواز کے ساتھ', // Urdu: with voice
+    ];
+
+    return voiceKeywords.any((keyword) => input.contains(keyword));
+  }
+
+  /// Check if input matches touch mode command
+  bool _matchesTouchCommand(String input) {
+    const touchKeywords = [
+      'touch',
+      'continue with touch',
+      'start with touch',
+      'touch mode',
+      'tap',
+      'ٹچ', // Urdu script
+    ];
+
+    return touchKeywords.any((keyword) => input.contains(keyword));
+  }
+
+  /// Handle voice mode selection
+  Future<void> _handleVoiceMode() async {
+    setState(() => _statusMessage = 'Voice mode selected');
+
+    // Save preference
+    await PreferencesManager.setVoiceModeEnabled(true);
+    // Initialize microphone right away so next page can listen immediately
+    await _initMicrophoneNow();
+    debugPrint('✅ Voice mode enabled and saved');
+
+    // Provide haptic feedback
+    HapticFeedback.mediumImpact();
+
+    // Speak confirmation in English
+    await _flutterTts.setLanguage('en-US');
+    await _flutterTts.speak('Voice mode selected. Navigating to language selection.');
+    await _flutterTts.awaitSpeakCompletion(true);
+
+    // Navigate to language page
+    _navigateToLang();
+  }
+
+  /// Handle touch mode selection
+  Future<void> _handleTouchMode() async {
+    setState(() => _statusMessage = 'Touch mode selected');
+
+    // Save preference
+    await PreferencesManager.setVoiceModeEnabled(false);
+    debugPrint('✅ Touch mode enabled and saved');
+
+    // Provide haptic feedback
+    HapticFeedback.lightImpact();
+
+    // Speak confirmation in English
+    await _flutterTts.setLanguage('en-US');
+    await _flutterTts.speak('Touch mode selected. You can now use touch controls with voice guidance. Navigating to language selection.');
+    await _flutterTts.awaitSpeakCompletion(true);
+
+    // Navigate to language page
+    _navigateToLang();
+  }
+
+  /// Ask user to repeat command
   Future<void> _askToRepeat() async {
-    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
-    if (isVoiceModeEnabled) {
-      await _initTTS();
-      final isUrdu = Lang.isUrdu;
-      if (isUrdu) {
-        try {
-          await _flutterTts.setLanguage('ur-PK');
-        } catch (_) {
-          await _flutterTts.setLanguage('en-US');
-        }
-      }
-      await _flutterTts.speak(Lang.t('please_repeat'));
+    setState(() => _statusMessage = 'Command not understood. Please repeat.');
+
+    // Provide haptic feedback for error
+    HapticFeedback.vibrate();
+
+    // Speak in both languages
+    await _flutterTts.setLanguage('en-US');
+    await _flutterTts.speak(
+      "I didn't catch that. Please say: voice, or touch.",
+    );
+    await _flutterTts.awaitSpeakCompletion(true);
+
+    try {
+      await _flutterTts.setLanguage('ur-PK');
+      await _flutterTts.speak('میں نے نہیں سنا۔ براہ کرم کہیں: آواز، یا ٹچ۔');
       await _flutterTts.awaitSpeakCompletion(true);
+    } catch (e) {
+      debugPrint('⚠️ Urdu repeat message not available');
     }
+
+    // Resume listening
+    await _startListening();
   }
 
+  /// Navigate to language selection page
   void _navigateToLang() {
     try {
       _speech.stop();
     } catch (_) {}
+    
     setState(() => _isListening = false);
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const NavAILanguagePage()),
-    );
+
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const NavAILanguagePage()),
+      );
+    }
   }
 
   @override
   void dispose() {
     try {
       _flutterTts.stop();
-    } catch (_) {}
-    try {
       _speech.stop();
     } catch (_) {}
     _pathController.dispose();
@@ -246,187 +488,176 @@ class _NavAIHomePageState extends State<NavAIHomePage>
     super.dispose();
   }
 
-  BoxDecoration _buildBackground() {
-    return const BoxDecoration(
-      gradient: RadialGradient(
-        center: Alignment.center,
-        radius: 1.0,
-        colors: [
-          Color(0xFF0f2027),
-          Color(0xFF203a43),
-          Color(0xFF2c5364),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
         decoration: _buildBackground(),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Container(
-                  color: const Color(0xFF0d1b2a),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 450),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 30, vertical: 40),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            SizedBox(
-                              height: 250,
-                              width: double.infinity,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(15),
-                                  gradient: const LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Color(0xFF0a192f),
-                                      Color(0xFF0d253f),
-                                    ],
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: Container(
+                    color: const Color(0xFF0d1b2a),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 450),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 30, vertical: 40),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              // Animation container
+                              SizedBox(
+                                height: 250,
+                                width: double.infinity,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(15),
+                                    gradient: const LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Color(0xFF0a192f),
+                                        Color(0xFF0d253f),
+                                      ],
+                                    ),
+                                  ),
+                                  child: AnimatedBuilder(
+                                    animation: Listenable.merge(
+                                        [_pathController, _starController]),
+                                    builder: (context, child) {
+                                      return CustomPaint(
+                                        painter: PathAnimationPainter(
+                                          pathAnimation: _pathController,
+                                          starAnimation: Tween<double>(
+                                            begin: 0.0,
+                                            end: 1.0,
+                                          ).animate(
+                                            CurvedAnimation(
+                                              parent: _starController,
+                                              curve: Curves.easeInOut,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   ),
                                 ),
-                                child: AnimatedBuilder(
-                                  animation: Listenable.merge(
-                                      [_pathController, _starController]),
-                                  builder: (context, child) {
-                                    return CustomPaint(
-                                      painter: PathAnimationPainter(
-                                        pathAnimation: _pathController,
-                                        starAnimation: Tween<double>(
-                                          begin: 0.0,
-                                          end: 1.0,
-                                        ).animate(
-                                          CurvedAnimation(
-                                            parent: _starController,
-                                            curve: Curves.easeInOut,
+                              ),
+                              const SizedBox(height: 20),
+                              
+                              // Title (bilingual)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 8),
+                                child: Text(
+                                  'Welcome to Nav AI / نیو اے آئی میں خوش آمدید',
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              
+                              // Subtitle (bilingual)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 8),
+                                child: Text(
+                                  'Smart navigation, designed for you.\nسمارٹ نیویگیشن، آپ کے لیے تیار کی گئی۔',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Color(0xFFcbd5e0),
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              
+                              // Voice mode button
+                              _buildButton(
+                                'Start with Voice / آواز سے شروع کریں',
+                                Icons.mic,
+                                const Color(0xFF2563eb),
+                                Colors.white,
+                                onTap: () async {
+                                  await PreferencesManager.setVoiceModeEnabled(true);
+                                  _navigateToLang();
+                                },
+                              ),
+                              
+                              // Touch mode button
+                              _buildButton(
+                                'Continue with Touch / ٹچ کے ذریعے جاری رکھیں',
+                                Icons.smartphone,
+                                const Color(0xFF1f2937),
+                                const Color(0xFFd1d5db),
+                                borderColor: const Color(0xFF374151),
+                                onTap: () async {
+                                  await PreferencesManager.setVoiceModeEnabled(false);
+                                  _navigateToLang();
+                                },
+                              ),
+                              
+                              // Status indicators
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Column(
+                                  children: [
+                                    // Speaking indicator
+                                    if (_isSpeaking)
+                                      _buildStatusIndicator(
+                                        icon: Icons.volume_up,
+                                        text: 'Speaking... / بول رہا ہے...',
+                                        color: Colors.blue,
+                                      ),
+                                    
+                                    // Listening indicator
+                                    if (_isListening)
+                                      _buildStatusIndicator(
+                                        icon: Icons.mic,
+                                        text: 'Listening... / سن رہا ہے...',
+                                        color: Colors.green,
+                                      ),
+                                    
+                                    // Status message
+                                    if (!_isSpeaking && !_isListening)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 8),
+                                        child: Text(
+                                          _statusMessage,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF9DA4B9),
                                           ),
+                                          textAlign: TextAlign.center,
                                         ),
                                       ),
-                                    );
-                                  },
+                                  ],
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 20),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 8),
-                              child: Text(
-                                'Welcome to Nav AI / نیو اے آئی میں خوش آمدید',
-                                style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 8),
-                              child: Text(
-                                'Smart navigation, designed for you.\nسمارٹ نیویگیشن، آپ کے لیے تیار کی گئی۔',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Color(0xFFcbd5e0),
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            _buildButton(
-                              'Start with Voice / آواز سے شروع کریں',
-                              Icons.mic,
-                              const Color(0xFF2563eb),
-                              Colors.white,
-                              onTap: () async {
-                                await PreferencesManager.setVoiceModeEnabled(true);
-                                _navigateToLang();
-                              },
-                            ),
-                            _buildButton(
-                              'Continue with Touch / ٹچ کے ذریعے جاری رکھیں',
-                              Icons.smartphone,
-                              const Color(0xFF1f2937),
-                              const Color(0xFFd1d5db),
-                              borderColor: const Color(0xFF374151),
-                              onTap: () async {
-                                await PreferencesManager.setVoiceModeEnabled(false);
-                                _navigateToLang();
-                              },
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(top: 10),
-                              child: Column(
-                                children: [
-                                  if (_isSpeaking)
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.volume_up,
-                                            size: 16, color: Colors.blue[300]),
-                                        const SizedBox(width: 5),
-                                        const Flexible(
-                                          child: Text(
-                                            'Speaking... / بول رہا ہے...',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.blue,
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  if (_isListening)
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.mic,
-                                            size: 16, color: Colors.green[300]),
-                                        const SizedBox(width: 5),
-                                        const Flexible(
-                                          child: Text(
-                                            'Listening... / آواز سن رہا ہے...',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.green,
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
   }
 
+  /// Build button widget
   Widget _buildButton(
       String text, IconData icon, Color background, Color foreground,
       {Color? borderColor, VoidCallback? onTap}) {
@@ -469,8 +700,56 @@ class _NavAIHomePageState extends State<NavAIHomePage>
       ),
     );
   }
+
+  /// Build status indicator widget
+  Widget _buildStatusIndicator({
+    required IconData icon,
+    required String text,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color.withOpacity(0.8)),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12,
+                color: color.withOpacity(0.8),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  BoxDecoration _buildBackground() {
+    return const BoxDecoration(
+      gradient: RadialGradient(
+        center: Alignment.center,
+        radius: 1.0,
+        colors: [
+          Color(0xFF0f2027),
+          Color(0xFF203a43),
+          Color(0xFF2c5364),
+        ],
+      ),
+    );
+  }
 }
 
+// PathAnimationPainter class remains unchanged
 class PathAnimationPainter extends CustomPainter {
   final Animation<double> pathAnimation;
   final Animation<double> starAnimation;
@@ -559,8 +838,7 @@ class PathAnimationPainter extends CustomPainter {
       ..strokeWidth = strokeWidth;
 
     canvas.drawPath(m1.extractPath(0, drawLen1), paint1);
-    canvas.drawPath(m2.extractPath(0, drawLen2),
-        paint2); // Fixed typo: drawLang2 -> drawLen2
+    canvas.drawPath(m2.extractPath(0, drawLen2), paint2);
 
     if (starAnimation.value > 0.0) {
       int steps = 100;

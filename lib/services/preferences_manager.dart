@@ -30,9 +30,26 @@ class PreferencesManager {
     return _prefs!.getString(_keyLanguage) ?? 'en';
   }
 
+  /// Accepts either short codes like 'en'/'ur' or locale IDs like 'en-US'/'ur-PK'.
+  /// Internally stores normalized short codes ('en' or 'ur') for compatibility.
   static Future<void> setLanguage(String language) async {
     await init();
-    await _prefs!.setString(_keyLanguage, language);
+    final normalized = _normalizeLanguage(language);
+    await _prefs!.setString(_keyLanguage, normalized);
+  }
+
+  /// Returns a speech locale identifier suitable for speech packages.
+  /// e.g. returns 'en-US' for English and 'ur-PK' for Urdu.
+  static Future<String> getSpeechLocale() async {
+    final lang = await getLanguage();
+    if (lang == 'ur') return 'ur-PK';
+    return 'en-US';
+  }
+
+  static String _normalizeLanguage(String language) {
+    final lower = language.toLowerCase();
+    if (lower.contains('ur')) return 'ur';
+    return 'en';
   }
 
   /// Clear all preferences (useful for testing or logout)

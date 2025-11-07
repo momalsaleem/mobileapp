@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
 
@@ -24,7 +26,10 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initializeCamera();
+    // Defer heavy camera initialization until after first frame so UI appears instantly.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeCamera();
+    });
   }
 
   @override
@@ -45,6 +50,19 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
       setState(() {
         _hasCameraError = false;
       });
+
+      // Guard for web: camera plugin behaves differently on web.
+      if (kIsWeb) {
+        _handleCameraError('Camera on web is not supported in this flow.');
+        return;
+      }
+
+      // Ensure we have camera permission before attempting to open camera.
+      final permissionStatus = await Permission.camera.request();
+      if (!permissionStatus.isGranted) {
+        _handleCameraError('Camera permission denied');
+        return;
+      }
 
       final cameras = await availableCameras();
       
@@ -74,7 +92,12 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
         }
       });
 
-      await controller.initialize();
+      try {
+        await controller.initialize();
+      } on CameraException catch (e) {
+        _handleCameraError('Camera initialize failed: ${e.description}');
+        return;
+      }
 
       // Initialize object detector
       final options = ObjectDetectorOptions(
@@ -99,18 +122,36 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
   }
 
   Future<void> _startCamera() async {
-    if (_cameraController != null && _cameraController!.value.isInitialized) {
+    if (_cameraController == null) return;
+
+    if (!_cameraController!.value.isInitialized) {
+      // Try to initialize controller if not initialized yet
       try {
-        await _cameraController!.startImageStream(_processCameraImage);
+        await _cameraController!.initialize();
       } catch (e) {
-        _handleCameraError(e.toString());
+        _handleCameraError('Failed to initialize camera controller: $e');
+        return;
       }
+    }
+
+    if (_cameraController!.value.isStreamingImages) return;
+
+    try {
+      await _cameraController!.startImageStream(_processCameraImage);
+    } catch (e) {
+      _handleCameraError(e.toString());
     }
   }
 
   Future<void> _stopCamera() async {
-    if (_cameraController != null && _cameraController!.value.isStreamingImages) {
-      await _cameraController!.stopImageStream();
+    if (_cameraController != null) {
+      try {
+        if (_cameraController!.value.isStreamingImages) {
+          await _cameraController!.stopImageStream();
+        }
+      } catch (e) {
+        debugPrint('Error stopping camera stream: $e');
+      }
     }
   }
 
@@ -136,8 +177,16 @@ class _CameraPageState extends State<CameraPage> with WidgetsBindingObserver {
 
   Future<void> _retryCamera() async {
     await _stopCamera();
-    await _cameraController?.dispose();
-    await _objectDetector?.close();
+    try {
+      await _cameraController?.dispose();
+    } catch (e) {
+      debugPrint('Error disposing controller: $e');
+    }
+    try {
+      await _objectDetector?.close();
+    } catch (e) {
+      debugPrint('Error closing detector: $e');
+    }
     
     setState(() {
       _cameraController = null;

@@ -4,6 +4,7 @@ import 'package:nav_aif_fyp/pages/lang.dart';
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:nav_aif_fyp/services/voice_manager.dart';
 
 class NameInputPage extends StatefulWidget {
   const NameInputPage({super.key});
@@ -29,42 +30,34 @@ class _NameInputPageState extends State<NameInputPage> {
   Future<void> _loadPreferences() async {
     await Lang.init();
     final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
-    
-    _initTTS();
-    
-    // Only speak if voice mode is enabled
+    await _initTTS();
+
+    // Only speak and listen if voice mode is enabled
     if (isVoiceModeEnabled) {
-      _speakInstruction();
+      await _speakInstruction();
+      await _startListening();
     }
-    
-    // Start listening for voice input
-    _startListening();
   }
 
   Future<void> _initTTS() async {
-    await _tts.setLanguage('en-US');
+    final locale = Lang.speechLocaleId;
+    try {
+      await _tts.setLanguage(locale);
+    } catch (_) {
+      await _tts.setLanguage('en-US');
+    }
     await _tts.setSpeechRate(0.5);
     await _tts.setPitch(1.0);
   }
 
   Future<void> _speakInstruction() async {
-    final isUrdu = Lang.isUrdu;
-    if (isUrdu) {
-      // For Urdu, use Urdu TTS if available
-      try {
-        await _tts.setLanguage('ur-PK');
-      } catch (_) {
-        await _tts.setLanguage('en-US');
-      }
-    } else {
-      await _tts.setLanguage('en-US');
-    }
-    
-    await _tts.speak(_instructionText);
+    await VoiceManager.safeSpeak(_tts, _instructionText);
+    await VoiceManager.safeAwaitSpeakCompletion(_tts);
   }
 
-  void _startListening() {
-    _speech.initialize(
+  Future<void> _startListening() async {
+    final available = await VoiceManager.safeInitializeSpeech(
+      _speech,
       onStatus: (val) {
         if (val == "done" && !_isListening) {
           _startListening();
@@ -74,22 +67,23 @@ class _NameInputPageState extends State<NameInputPage> {
         debugPrint('Speech Error: $val');
         setState(() => _isListening = false);
       },
-    ).then((available) {
-      if (available) {
-        setState(() => _isListening = true);
-        _speech.listen(
-          localeId: Lang.speechLocaleId,
-          onResult: (result) {
-            String recognized = result.recognizedWords.toLowerCase().trim();
-            if (recognized.isNotEmpty) {
-              _processCommand(recognized);
-            }
-          },
-        );
-      } else {
-        setState(() => _isListening = false);
-      }
-    });
+    );
+
+    if (available) {
+      setState(() => _isListening = true);
+      await VoiceManager.safeListen(
+        _speech,
+        localeId: Lang.speechLocaleId,
+        onResult: (result) {
+          String recognized = (result.recognizedWords ?? '').toString().toLowerCase().trim();
+          if (recognized.isNotEmpty) {
+            _processCommand(recognized);
+          }
+        },
+      );
+    } else {
+      setState(() => _isListening = false);
+    }
   }
 
   void _processCommand(String recognized) async {
@@ -100,7 +94,7 @@ class _NameInputPageState extends State<NameInputPage> {
         !recognized.contains('continue') && 
         !recognized.contains('next') &&
         recognized.length > 1) {
-      _speech.stop();
+      await VoiceManager.safeStopListening(_speech);
       setState(() {
         _isListening = false;
         _nameController.text = recognized; // Set the recognized name
@@ -109,16 +103,8 @@ class _NameInputPageState extends State<NameInputPage> {
       final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
       if (isVoiceModeEnabled) {
         await _initTTS();
-        final isUrdu = Lang.isUrdu;
-        if (isUrdu) {
-          try {
-            await _tts.setLanguage('ur-PK');
-          } catch (_) {
-            await _tts.setLanguage('en-US');
-          }
-        }
-        await _tts.speak('Hello $recognized. ${Lang.t('continue')}.');
-        await _tts.awaitSpeakCompletion(true);
+        await VoiceManager.safeSpeak(_tts, 'Hello $recognized. ${Lang.t('continue')}.');
+        await VoiceManager.safeAwaitSpeakCompletion(_tts);
       }
       
       Future.delayed(const Duration(milliseconds: 500), () {
@@ -134,16 +120,8 @@ class _NameInputPageState extends State<NameInputPage> {
     final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
     if (isVoiceModeEnabled) {
       await _initTTS();
-      final isUrdu = Lang.isUrdu;
-      if (isUrdu) {
-        try {
-          await _tts.setLanguage('ur-PK');
-        } catch (_) {
-          await _tts.setLanguage('en-US');
-        }
-      }
-      await _tts.speak(Lang.t('please_repeat'));
-      await _tts.awaitSpeakCompletion(true);
+      await VoiceManager.safeSpeak(_tts, Lang.t('please_repeat'));
+      await VoiceManager.safeAwaitSpeakCompletion(_tts);
     }
   }
 
@@ -159,7 +137,7 @@ class _NameInputPageState extends State<NameInputPage> {
 
   @override
   void dispose() {
-    _speech.stop();
+    VoiceManager.safeStopListening(_speech);
     _nameController.dispose();
     super.dispose();
   }

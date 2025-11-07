@@ -5,6 +5,7 @@ import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:nav_aif_fyp/services/voice_manager.dart';
 
 void main() {
   runApp(const NavAIApp());
@@ -58,7 +59,9 @@ class _UseLocationPageState extends State<UseLocationPage> {
     }
     
     // Start listening for voice input
-    await _startListening();
+    if (isVoiceModeEnabled) {
+      await _startListening();
+    }
   }
 
   Future<void> _initTTS() async {
@@ -82,19 +85,19 @@ class _UseLocationPageState extends State<UseLocationPage> {
     }
 
     // Step 1: Introduction
-    await _tts.speak(Lang.t('where_are_you'));
-    await _tts.awaitSpeakCompletion(true);
+  await VoiceManager.safeSpeak(_tts, Lang.t('where_are_you'));
+  await VoiceManager.safeAwaitSpeakCompletion(_tts);
 
     // Step 2: Speak each option in order
     for (var option in options) {
-      await _tts.speak('${Lang.t(option['label'])}.');
-      await _tts.awaitSpeakCompletion(true);
+  await VoiceManager.safeSpeak(_tts, '${Lang.t(option['label'])}.');
+  await VoiceManager.safeAwaitSpeakCompletion(_tts);
     }
 
     // Step 3: Final guidance
-    await _tts.speak(
-        'You can say Home, Work, College, or University to select your location.');
-    await _tts.awaitSpeakCompletion(true);
+  await VoiceManager.safeSpeak(
+    _tts, 'You can say Home, Work, College, or University to select your location.');
+  await VoiceManager.safeAwaitSpeakCompletion(_tts);
 
     // Step 4: Start voice recognition after speaking all options
     await _startListening();
@@ -102,7 +105,8 @@ class _UseLocationPageState extends State<UseLocationPage> {
 
   // ✅ Start listening continuously for user command
   Future<void> _startListening() async {
-    bool available = await _speech.initialize(
+    final available = await VoiceManager.safeInitializeSpeech(
+      _speech,
       onStatus: (val) {
         if (val == "done" && _isListening) {
           setState(() => _isListening = false);
@@ -117,10 +121,11 @@ class _UseLocationPageState extends State<UseLocationPage> {
 
     if (available) {
       setState(() => _isListening = true);
-      _speech.listen(
+      await VoiceManager.safeListen(
+        _speech,
         localeId: Lang.speechLocaleId,
         onResult: (result) {
-          String recognized = result.recognizedWords.toLowerCase().trim();
+          String recognized = (result.recognizedWords ?? '').toString().toLowerCase().trim();
           if (recognized.isNotEmpty) {
             debugPrint('🎙 Recognized: $recognized');
             _processCommand(recognized);
@@ -157,22 +162,14 @@ class _UseLocationPageState extends State<UseLocationPage> {
     final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
     if (isVoiceModeEnabled) {
       await _initTTS();
-      final isUrdu = Lang.isUrdu;
-      if (isUrdu) {
-        try {
-          await _tts.setLanguage('ur-PK');
-        } catch (_) {
-          await _tts.setLanguage('en-US');
-        }
-      }
-      await _tts.speak(Lang.t('please_repeat'));
-      await _tts.awaitSpeakCompletion(true);
+      await VoiceManager.safeSpeak(_tts, Lang.t('please_repeat'));
+      await VoiceManager.safeAwaitSpeakCompletion(_tts);
     }
   }
 
   // ✅ Speak confirmation and navigate to next page
   Future<void> _selectLocationAndNavigate(int index) async {
-    _speech.stop();
+    await VoiceManager.safeStopListening(_speech);
     setState(() {
       _isListening = false;
       _selectedIndex = index;
@@ -180,9 +177,8 @@ class _UseLocationPageState extends State<UseLocationPage> {
 
     String location = Lang.t(options[index]['label']);
 
-    await _tts
-        .speak('You selected $location. Moving to navigation mode selection.');
-    await _tts.awaitSpeakCompletion(true);
+  await VoiceManager.safeSpeak(_tts, 'You selected $location. Moving to navigation mode selection.');
+  await VoiceManager.safeAwaitSpeakCompletion(_tts);
 
     if (mounted) {
       Navigator.of(context).push(

@@ -4,10 +4,11 @@ import 'package:nav_aif_fyp/pages/profile.dart';
 import 'package:nav_aif_fyp/pages/lang.dart';
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:nav_aif_fyp/services/voice_manager.dart';
 
-// Import your camera page - replace with your actual camera page import
-import 'package:nav_aif_fyp/pages/camera_page.dart'; // Adjust this import path
+import 'package:nav_aif_fyp/pages/camera_page.dart'; 
 import 'package:nav_aif_fyp/pages/saved_routes_page.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -23,7 +24,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isListening = false;
   int? _hoveredIndex;
   int _backPressCount = 0;
-  bool _isInitialized = false;
 
   String get _instructionText => Lang.t('dashboard_welcome');
 
@@ -35,54 +35,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
         'icon': Icons.camera_alt,
         'titleKey': "object_detection",
         'subtitleKey': "object_detection_desc",
-        'onTap': _openObjectDetection, // Add onTap handler
+        'onTap': _openObjectDetection,
       },
       {
         'icon': Icons.navigation,
         'titleKey': "navigation",
         'subtitleKey': "navigation_desc",
-        'onTap': () => _handleCardTap('navigation'), // Add onTap handler
+        'onTap': () => _handleCardTap('navigation'),
       },
       {
         'icon': Icons.route,
         'titleKey': "saved_routes",
         'subtitleKey': "saved_routes_desc",
-        'onTap': () => _handleCardTap('saved_routes'), // Add onTap handler
+        'onTap': () => _handleCardTap('saved_routes'), 
       },
       {
         'icon': Icons.book, 
         'titleKey': "guide", 
         'subtitleKey': "guide_desc",
-        'onTap': () => _handleCardTap('guide'), // Add onTap handler
+        'onTap': () => _handleCardTap('guide'), 
       },
     ];
   }
 
-  // Function to handle object detection card tap
   void _openObjectDetection() async {
     final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
     
     if (isVoiceModeEnabled) {
-      await _tts.speak('${Lang.t('opening')} ${Lang.t('object_detection')}.');
+      await _initTTS();
+      await VoiceManager.safeSpeak(_tts, '${Lang.t('opening')} ${Lang.t('object_detection')}.');
     }
     
-    // Navigate to camera page
     if (mounted) {
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (context) => CameraPage()), // Replace with your actual camera page
+        MaterialPageRoute(builder: (context) => CameraPage()),
       );
     }
   }
 
-  // Function to handle other card taps
   void _handleCardTap(String feature) async {
     final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
     
     if (isVoiceModeEnabled) {
-      await _tts.speak('${Lang.t(feature)} ${Lang.t('selected')}.');
+      await _initTTS();
+      await VoiceManager.safeSpeak(_tts, '${Lang.t(feature)} ${Lang.t('selected')}.');
     }
     
-    // TODO: Add navigation for other features
     if (feature == 'saved_routes') {
       if (mounted) {
         Navigator.of(context).push(
@@ -98,28 +96,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _buildCards();
-    setState(() {
-      _isInitialized = true;
+    // Build UI immediately, initialize voice in background without blocking UI
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeVoiceInBackground();
     });
-    _initializeApp();
   }
 
-  Future<void> _initializeApp() async {
-    await _loadPreferences();
-    await _initTTS();
-    
-    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
-    
-    if (isVoiceModeEnabled) {
-      _speakOptions();
+  Future<void> _initializeVoiceInBackground() async {
+    try {
+      await Lang.init();
+      final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+      await _initTTS();
+
+      if (isVoiceModeEnabled) {
+        await _speakOptions();
+        await _startListening();
+      }
+    } catch (e) {
+      debugPrint('Background voice init error: $e');
     }
-    
-    _startListening();
   }
 
-  Future<void> _loadPreferences() async {
-    await Lang.init();
-  }
+  
 
   Future<void> _initTTS() async {
     final isUrdu = Lang.isUrdu;
@@ -132,24 +130,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } else {
       await _tts.setLanguage('en-US');
     }
-    await _tts.setSpeechRate(0.5);
+    // Tweak for clearer speech
+    await _tts.setSpeechRate(0.45);
     await _tts.setPitch(1.0);
+    try {
+      await _tts.setVolume(1.0);
+    } catch (_) {}
   }
 
   Future<void> _speakOptions() async {
-    await _tts.speak(_instructionText);
-    await Future.delayed(const Duration(seconds: 6));
+    await VoiceManager.safeSpeak(_tts, _instructionText);
 
+    // Speak each card's title and subtitle
     for (var card in _cards) {
-      await _tts.speak('${Lang.t(card['titleKey'])}. ${Lang.t(card['subtitleKey'])}');
-      await Future.delayed(const Duration(seconds: 2));
+      await VoiceManager.safeSpeak(
+          _tts, '${Lang.t(card['titleKey'])}. ${Lang.t(card['subtitleKey'])}');
     }
-
-    await _tts.awaitSpeakCompletion(true);
   }
 
-  void _startListening() {
-    _speech.initialize(
+  Future<void> _startListening() async {
+    // Ensure microphone permission is available
+    final micStatus = await Permission.microphone.request();
+    if (!micStatus.isGranted) {
+      debugPrint('Microphone permission not granted (dashboard)');
+      setState(() => _isListening = false);
+      return;
+    }
+
+    final available = await VoiceManager.safeInitializeSpeech(
+      _speech,
       onStatus: (val) {
         if (val == "done" && !_isListening) {
           _startListening();
@@ -159,39 +168,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
         debugPrint('Speech Error: $val');
         setState(() => _isListening = false);
       },
-    ).then((available) {
-      if (available) {
-        setState(() => _isListening = true);
-        _speech.listen(
-          localeId: Lang.speechLocaleId,
-          onResult: (result) {
-            String recognized = result.recognizedWords.toLowerCase().trim();
-            if (recognized.isNotEmpty) {
-              _processCommand(recognized);
-            }
-          },
-        );
-      } else {
-        setState(() => _isListening = false);
-      }
-    });
+    );
+
+    if (available) {
+      setState(() => _isListening = true);
+      await VoiceManager.safeListen(
+        _speech,
+        localeId: Lang.speechLocaleId,
+        onResult: (result) {
+          String recognized = (result.recognizedWords ?? '').toString().toLowerCase().trim();
+          if (recognized.isNotEmpty) {
+            _processCommand(recognized);
+          }
+        },
+      );
+    } else {
+      setState(() => _isListening = false);
+    }
   }
 
-  void _processCommand(String recognized) async {
+  Future<void> _processCommand(String recognized) async {
     debugPrint("🎙 Dashboard Recognized: $recognized");
-
-    await _speech.stop();
+    await VoiceManager.safeStopListening(_speech);
     setState(() => _isListening = false);
 
     final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
     bool commandMatched = false;
 
+    // Process commands without awaiting long operations
     if (recognized.contains('settings') || recognized.contains('سیٹنگز')) {
-      if (isVoiceModeEnabled) {
-        await _tts.speak('${Lang.t('opening')} ${Lang.t('settings')}.');
-        await _tts.awaitSpeakCompletion(true);
-      }
       commandMatched = true;
+      if (isVoiceModeEnabled) {
+        await _initTTS();
+        await VoiceManager.safeSpeak(_tts, '${Lang.t('opening')} ${Lang.t('settings')}.');
+      }
       Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
           Navigator.of(context).push(
@@ -200,11 +210,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       });
     } else if (recognized.contains('profile') || recognized.contains('پروفائل')) {
-      if (isVoiceModeEnabled) {
-        await _tts.speak('${Lang.t('opening')} ${Lang.t('profile')}.');
-        await _tts.awaitSpeakCompletion(true);
-      }
       commandMatched = true;
+      if (isVoiceModeEnabled) {
+        await _initTTS();
+        await VoiceManager.safeSpeak(_tts, '${Lang.t('opening')} ${Lang.t('profile')}.');
+      }
       Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
           Navigator.of(context).push(
@@ -213,29 +223,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       });
     } else if (recognized.contains('object') || recognized.contains('آبجیکٹ')) {
-      if (isVoiceModeEnabled) {
-        await _tts.speak('${Lang.t('opening')} ${Lang.t('object_detection')}.');
-        await _tts.awaitSpeakCompletion(true);
-      }
       commandMatched = true;
-      // Navigate to camera page when voice command is recognized
+      if (isVoiceModeEnabled) {
+        await _initTTS();
+        await VoiceManager.safeSpeak(_tts, '${Lang.t('opening')} ${Lang.t('object_detection')}.');
+      }
       Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
           Navigator.of(context).push(
-            MaterialPageRoute(builder: (context) => CameraPage()), // Replace with your actual camera page
+            MaterialPageRoute(builder: (context) => CameraPage()),
           );
         }
       });
     } else if (recognized.contains('navigation') || recognized.contains('نیویگیشن')) {
-      if (isVoiceModeEnabled) {
-        await _tts.speak('${Lang.t('navigation')} ${Lang.t('selected')}.');
-      }
       commandMatched = true;
+      if (isVoiceModeEnabled) {
+        await _initTTS();
+        VoiceManager.safeSpeak(_tts, '${Lang.t('navigation')} ${Lang.t('selected')}.');
+      }
+      _startListening();
     } else if (recognized.contains('route') || recognized.contains('راستہ')) {
-      if (isVoiceModeEnabled) {
-        await _tts.speak('${Lang.t('opening')} ${Lang.t('saved_routes')}.');
-      }
       commandMatched = true;
+      if (isVoiceModeEnabled) {
+        await _initTTS();
+        VoiceManager.safeSpeak(_tts, '${Lang.t('opening')} ${Lang.t('saved_routes')}.');
+      }
       Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
           Navigator.of(context).push(
@@ -244,36 +256,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       });
     } else if (recognized.contains('guide') || recognized.contains('گائیڈ')) {
-      if (isVoiceModeEnabled) {
-        await _tts.speak('${Lang.t('opening')} ${Lang.t('guide')}.');
-      }
       commandMatched = true;
+      if (isVoiceModeEnabled) {
+        await _initTTS();
+        VoiceManager.safeSpeak(_tts, '${Lang.t('opening')} ${Lang.t('guide')}.');
+      }
+      _startListening();
     }
     
     if (!commandMatched && recognized.length > 2) {
-      await _askToRepeat();
+      _askToRepeat();
     } else if (!commandMatched) {
       _startListening();
     }
   }
 
-  Future<void> _askToRepeat() async {
+  void _askToRepeat() async {
     final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
     if (isVoiceModeEnabled) {
-      await _tts.speak(Lang.t('not_understood'));
-      await _tts.awaitSpeakCompletion(true);
+      await _initTTS();
+      VoiceManager.safeSpeak(_tts, Lang.t('not_understood'));
       _startListening();
     }
   }
 
   Widget _buildCard(int index, IconData icon, String titleKey, String subtitleKey, VoidCallback onTap) {
     final isHovered = _hoveredIndex == index;
-    final borderColor =
-        isHovered ? const Color(0xFF1349ec) : Colors.transparent;
-    final iconColor =
-        isHovered ? const Color(0xFF1349ec) : const Color(0xFF2563eb);
-    final bgColor =
-        isHovered ? const Color(0xFF1A202C) : Colors.white.withOpacity(0.05);
+    final borderColor = isHovered ? const Color(0xFF1349ec) : Colors.transparent;
+    final iconColor = isHovered ? const Color(0xFF1349ec) : const Color(0xFF2563eb);
+    final bgColor = isHovered ? const Color(0xFF1A202C) : Colors.white.withOpacity(0.05);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hoveredIndex = index),
@@ -329,8 +340,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildBottomNavItem(
-      IconData icon, String label, bool active, BuildContext context) {
+  Widget _buildBottomNavItem(IconData icon, String label, bool active, BuildContext context) {
     return Expanded(
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -372,30 +382,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isInitialized) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF0d1b2a),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1349EC)),
-              ),
-              SizedBox(height: 20),
-              Text(
-                'Loading Dashboard...',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
+    // Show loading only for a very brief moment if needed
     return Scaffold(
       backgroundColor: const Color(0xFF0d1b2a),
       appBar: AppBar(
@@ -438,7 +425,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     card['icon'], 
                     card['titleKey'], 
                     card['subtitleKey'],
-                    card['onTap'], // Pass the onTap callback
+                    card['onTap'],
                   );
                 }),
               ),
@@ -459,7 +446,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Icon(Icons.mic, size: 16, color: Colors.green[300]),
                   const SizedBox(width: 8),
                   Text(
-                    '${Lang.t('listening')} Say "settings", "profile", or a feature name',
+                    '${Lang.t('listening')} ${Lang.t('dashboard_voice_hint')}',
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.green[300],
@@ -489,7 +476,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
-    _speech.stop();
+    VoiceManager.safeStopListening(_speech);
     _tts.stop();
     super.dispose();
   }

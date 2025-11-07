@@ -4,6 +4,8 @@ import 'package:nav_aif_fyp/pages/page_four.dart'; // Import DashboardScreen
 import 'package:nav_aif_fyp/pages/lang.dart';
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:nav_aif_fyp/services/voice_manager.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -16,6 +18,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final TextEditingController _nameController =
       TextEditingController(text: "Alex Doe");
   final FlutterTts _tts = FlutterTts();
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _isListening = false;
   String _voiceId = "Female";
   String _language = "English";
   String _navMode = "Both";
@@ -26,7 +30,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeApp();
+    // Defer heavy/voice initialization until after first frame (web-safe)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeApp();
+    });
   }
 
   Future<void> _initializeApp() async {
@@ -56,7 +63,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
     
     if (isVoiceModeEnabled) {
-      _speakWelcome();
+      await _speakWelcome();
+    }
+
+    // Initialize microphone and start listening if voice mode is enabled
+    if (isVoiceModeEnabled) {
+      await _startListening();
     }
   }
 
@@ -76,8 +88,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _speakWelcome() async {
-    await _tts.speak('${Lang.t('welcome')} ${Lang.t('profile_title')}.');
-    await _tts.awaitSpeakCompletion(true);
+    await VoiceManager.safeSpeak(_tts, '${Lang.t('welcome')} ${Lang.t('profile_title')}.');
+    await VoiceManager.safeAwaitSpeakCompletion(_tts);
+  }
+
+  Future<void> _startListening() async {
+    final available = await VoiceManager.safeInitializeSpeech(
+      _speech,
+      onStatus: (val) {
+        if (val == "done" && !_isListening) {
+          _startListening();
+        }
+      },
+      onError: (val) {
+        debugPrint('Speech Error: $val');
+        setState(() => _isListening = false);
+      },
+    );
+
+    if (available) {
+      setState(() => _isListening = true);
+      await VoiceManager.safeListen(
+        _speech,
+        localeId: Lang.speechLocaleId,
+        onResult: (result) {
+          String recognized = (result.recognizedWords ?? '').toString().toLowerCase().trim();
+          if (recognized.isNotEmpty) {
+            _processVoiceCommand(recognized);
+          }
+        },
+      );
+    } else {
+      setState(() => _isListening = false);
+    }
+  }
+
+  Future<void> _processVoiceCommand(String recognized) async {
+    // Simple handling: if user says 'settings' or 'profile' or similar, respond
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (recognized.contains('settings') || recognized.contains('سیٹنگز')) {
+      if (isVoiceModeEnabled) {
+        await VoiceManager.safeSpeak(_tts, '${Lang.t('opening')} ${Lang.t('settings')}.');
+      }
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (context) => const SettingsPage()),
+          );
+        }
+      });
+    }
   }
 
   Widget _buildBottomNavItem(
@@ -133,6 +193,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    VoiceManager.safeStopListening(_speech);
     _tts.stop();
     super.dispose();
   }
