@@ -31,3 +31,5 @@ captures/
 *.ap_ 
 *.aab
 *.hprof
+".dart_tool/" 
+"build/" 
