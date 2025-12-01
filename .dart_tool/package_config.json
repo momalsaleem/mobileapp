@@ -3,9 +3,9 @@
   "packages": [
     {
       "name": "android_intent_plus",
-      "rootUri": "file:///C:/Users/SSC/AppData/Local/Pub/Cache/hosted/pub.dev/android_intent_plus-4.0.3",
+      "rootUri": "file:///C:/Users/SSC/AppData/Local/Pub/Cache/hosted/pub.dev/android_intent_plus-6.0.0",
       "packageUri": "lib/",
-      "languageVersion": "2.18"
+      "languageVersion": "3.1"
     },
     {
       "name": "async",
@@ -279,13 +279,13 @@
     },
     {
       "name": "permission_handler",
-      "rootUri": "file:///C:/Users/SSC/AppData/Local/Pub/Cache/hosted/pub.dev/permission_handler-11.4.0",
+      "rootUri": "file:///C:/Users/SSC/AppData/Local/Pub/Cache/hosted/pub.dev/permission_handler-12.0.1",
       "packageUri": "lib/",
       "languageVersion": "3.5"
     },
     {
       "name": "permission_handler_android",
-      "rootUri": "file:///C:/Users/SSC/AppData/Local/Pub/Cache/hosted/pub.dev/permission_handler_android-12.1.0",
+      "rootUri": "file:///C:/Users/SSC/AppData/Local/Pub/Cache/hosted/pub.dev/permission_handler_android-13.0.1",
       "packageUri": "lib/",
       "languageVersion": "3.5"
     },

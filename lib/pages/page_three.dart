@@ -4,9 +4,10 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:nav_aif_fyp/pages/page_four.dart';
-import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:nav_aif_fyp/utils/lang.dart';
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:nav_aif_fyp/services/voice_manager.dart';
+import 'package:nav_aif_fyp/services/route_tts_observer.dart';
 
 class GuidePageBody extends StatefulWidget {
   const GuidePageBody({super.key});
@@ -15,7 +16,7 @@ class GuidePageBody extends StatefulWidget {
   State<GuidePageBody> createState() => _GuidePageBodyState();
 }
 
-class _GuidePageBodyState extends State<GuidePageBody> {
+class _GuidePageBodyState extends State<GuidePageBody> with RouteAwareTtsStopper {
   final FlutterTts _tts = FlutterTts();
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isListening = false;
@@ -374,7 +375,7 @@ class _GuidePageBodyState extends State<GuidePageBody> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.2),
+                        color: Colors.blue.withAlpha((0.2 * 255).round()),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.blue, width: 1),
                       ),
@@ -442,7 +443,7 @@ class _GuidePageBodyState extends State<GuidePageBody> {
                       margin: const EdgeInsets.only(bottom: 16, left: 24, right: 24),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
-                        color: Colors.green.withOpacity(0.15),
+                        color: Colors.green.withAlpha((0.15 * 255).round()),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: Colors.green, width: 1.5),
                       ),
@@ -470,8 +471,8 @@ class _GuidePageBodyState extends State<GuidePageBody> {
                       key: const ValueKey('not_listening'),
                       margin: const EdgeInsets.only(bottom: 16, left: 24, right: 24),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.15),
+                        decoration: BoxDecoration(
+                        color: Colors.orange.withAlpha((0.15 * 255).round()),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: Colors.orange, width: 1.5),
                       ),
@@ -530,16 +531,16 @@ class _GuidePageBodyState extends State<GuidePageBody> {
                 height: 54,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _selectedIndex != null 
-                        ? const Color(0xFF1349EC)
-                        : Colors.grey.withOpacity(0.3),
+          backgroundColor: _selectedIndex != null 
+            ? const Color(0xFF1349EC)
+            : Colors.grey.withAlpha((0.3 * 255).round()),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
                     elevation: 2,
                     shadowColor: _selectedIndex != null 
-                        ? const Color(0xFF1349EC).withOpacity(0.5)
+                        ? Color(0xFF1349EC).withAlpha((0.5 * 255).round())
                         : Colors.transparent,
                   ),
                   onPressed: _selectedIndex != null
@@ -564,9 +565,24 @@ class _GuidePageBodyState extends State<GuidePageBody> {
 
   @override
   void dispose() {
-    VoiceManager.safeStopListening(_speech);
-    _tts.stop();
+    // Let mixin unsubscribe when super.dispose is called
+    try {
+      VoiceManager.safeStopListening(_speech);
+    } catch (_) {}
+    try {
+      _tts.stop();
+    } catch (_) {}
     super.dispose();
+  }
+
+  @override
+  Future<void> stopTtsAndListening() async {
+    try {
+      await VoiceManager.safeStopListening(_speech);
+    } catch (_) {}
+    try {
+      await _tts.stop();
+    } catch (_) {}
   }
 }
 
@@ -617,7 +633,7 @@ class _NavigationOptionCard extends StatelessWidget {
             boxShadow: [
               if (isSelected || isHovered)
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
+                  color: Colors.black.withAlpha((0.3 * 255).round()),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -632,8 +648,8 @@ class _NavigationOptionCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: backgroundColor,
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: iconColor.withOpacity(0.3),
+                    border: Border.all(
+                    color: iconColor.withAlpha((0.3 * 255).round()),
                     width: 1.5,
                   ),
                 ),

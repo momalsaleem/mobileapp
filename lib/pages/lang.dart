@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:nav_aif_fyp/pages/page_one.dart';
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:nav_aif_fyp/utils/lang.dart';
+import 'package:nav_aif_fyp/services/voice_manager.dart';
+import 'package:nav_aif_fyp/services/route_tts_observer.dart';
+import 'package:nav_aif_fyp/pages/page_four.dart';
+
+export 'package:nav_aif_fyp/utils/lang.dart';
 
 class NavAILanguagePage extends StatelessWidget {
   const NavAILanguagePage({super.key});
@@ -22,14 +27,14 @@ class LanguageSelectionScreen extends StatefulWidget {
       _LanguageSelectionScreenState();
 }
 
-class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
+class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> with RouteAwareTtsStopper {
   final FlutterTts flutterTts = FlutterTts();
   final stt.SpeechToText _speech = stt.SpeechToText();
 
-  String selectedLanguage = "English";
+  String selectedLanguage = ""; // Start with no selection
   bool _isListening = false;
   bool _isSpeaking = false;
-  bool _bilingualIntroComplete = false;
+  bool _isNavigating = false;
   String _statusMessage = 'Initializing...';
 
   @override
@@ -47,24 +52,22 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
     final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
     
     if (isVoiceModeEnabled) {
-      // Speak bilingual introduction
-      await _speakBilingualLanguageIntro();
-      // Start listening after introduction
+      // Read the page content in both languages
+      await _readPageContentBilingual();
+      // Start listening after reading
       await _startListening();
     } else {
       // Touch mode - just show status
-      setState(() => _statusMessage = 'Touch mode active. Select your language.');
+      setState(() => _statusMessage = 'Please select your preferred language.');
     }
   }
 
   Future<void> _loadPreferences() async {
     await Lang.init();
-    final savedLanguage = await PreferencesManager.getLanguage();
-    if (savedLanguage == 'ur') {
-      setState(() => selectedLanguage = "Urdu");
-    } else {
-      setState(() => selectedLanguage = "English");
-    }
+    // Don't pre-select a language - let user choose
+    setState(() {
+      selectedLanguage = "";
+    });
   }
 
   Future<void> _initTTS() async {
@@ -87,73 +90,102 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
     });
   }
 
-  /// Speak bilingual language introduction
-  Future<void> _speakBilingualLanguageIntro() async {
-    setState(() => _statusMessage = 'Speaking language options...');
-
+  /// Read the page content in both English and Urdu
+  Future<void> _readPageContentBilingual() async {
     try {
-      // === ENGLISH INTRODUCTION ===
+      setState(() {
+        _isSpeaking = true;
+        _statusMessage = 'Reading page content...';
+      });
+      
+      // === ENGLISH PAGE CONTENT ===
       await flutterTts.setLanguage('en-US');
-      await flutterTts.speak(
-        'Select your preferred language. '
+      await VoiceManager.safeSpeak(
+        flutterTts,
+        'Language Selection. Select Your Language. Please choose either English or Urdu to continue. '
         'Say English for English interface, or Urdu for Urdu interface. '
-        'You can also say: English, or Urdu.',
+        'You can also tap the language buttons on screen. After selection, you will be automatically redirected to the dashboard.',
       );
-      await flutterTts.awaitSpeakCompletion(true);
+      await VoiceManager.safeAwaitSpeakCompletion(flutterTts);
       
       // Pause between languages
-      await Future.delayed(const Duration(milliseconds: 1000));
+      await Future.delayed(const Duration(milliseconds: 800));
 
-      // === URDU INTRODUCTION ===
+      // === URDU PAGE CONTENT ===
       try {
         await flutterTts.setLanguage('ur-PK');
-        await flutterTts.speak(
-          'اپنی پسندیدہ زبان منتخب کریں۔ '
-          'انگریزی انٹرفیس کے لیے انگلش کہیں، یا اردو انٹرفیس کے لیے اردو کہیں۔',
+        await VoiceManager.safeSpeak(
+          flutterTts,
+          'زبان کی منتخب۔ اپنی زبان منتخب کریں۔ براہ کرم جاری رکھنے کے لیے انگلش یا اردو میں سے ایک منتخب کریں۔ '
+          'انگریزی انٹرفیس کے لیے انگلش کہیں، یا اردو انٹرفیس کے لیے اردو کہیں۔ '
+          'آپ سکرین پر زبان کے بٹنز پر ٹیپ بھی کر سکتے ہیں۔ منتخب کے بعد، آپ خود بخود ڈیش بورڈ پر منتقل ہو جائیں گے۔',
         );
-        await flutterTts.awaitSpeakCompletion(true);
+        await VoiceManager.safeAwaitSpeakCompletion(flutterTts);
       } catch (e) {
-        debugPrint('⚠️ Urdu TTS not available: $e');
+        debugPrint('⚠ Urdu TTS not available, skipping: $e');
+        // Fallback to English
+        await flutterTts.setLanguage('en-US');
+        await VoiceManager.safeSpeak(
+          flutterTts,
+          'Language selection page. Please select English or Urdu to continue.',
+        );
+        await VoiceManager.safeAwaitSpeakCompletion(flutterTts);
       }
 
-      // Pause before listening
-      await Future.delayed(const Duration(milliseconds: 500));
-
       setState(() {
-        _bilingualIntroComplete = true;
-        _statusMessage = 'Listening... Say "English" or "Urdu"';
+        _isSpeaking = false;
+        _statusMessage = 'Listening... Say "English" or "Urdu" to select';
       });
 
-      debugPrint('✅ Language introduction complete');
+      debugPrint('✅ Page content read in both languages');
     } catch (e) {
-      debugPrint('❌ Error during language introduction: $e');
-      setState(() => _statusMessage = 'Introduction error. Touch mode available.');
+      debugPrint('❌ Error reading page content: $e');
+      setState(() {
+        _isSpeaking = false;
+        _statusMessage = 'Please select your language to continue.';
+      });
     }
   }
 
   /// Start listening for language selection
   Future<void> _startListening() async {
+    // Only start listening if voice mode is enabled and no language is selected yet
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (!isVoiceModeEnabled || selectedLanguage.isNotEmpty || _isNavigating) {
+      return;
+    }
+
     bool available = await _speech.initialize(
       onStatus: (val) {
-        if (val == "done" && !_isListening) {
-          // Restart listening after completion
-          _startListening();
+        debugPrint('🎙️ Speech status: $val');
+        if (val == "done" && !_isListening && mounted && !_isNavigating && selectedLanguage.isEmpty) {
+          // Restart listening after completion if no selection made
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted && !_isNavigating && selectedLanguage.isEmpty) _startListening();
+          });
         }
       },
       onError: (val) {
-        debugPrint('Speech Error: $val');
-        setState(() => _isListening = false);
+        debugPrint('🎙️ Speech Error: $val');
+        if (mounted) {
+          setState(() {
+            _isListening = false;
+            _statusMessage = 'Listening error. Please use touch controls.';
+          });
+        }
       },
     );
 
-    if (available) {
-      setState(() {
-        _isListening = true;
-        _statusMessage = 'Listening... Say "English" or "Urdu"';
-      });
+    if (available && !_isNavigating && selectedLanguage.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _isListening = true;
+          _statusMessage = 'Listening... Say "English" or "Urdu" to select';
+        });
+      }
       
-      _speech.listen(
-        localeId: 'en-US', // Use English for detection
+      await _speech.listen(
+        localeId: 'en-US',
         onResult: (result) {
           if (result.finalResult) {
             String recognized = result.recognizedWords.toLowerCase().trim();
@@ -164,68 +196,130 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
         },
         listenFor: const Duration(seconds: 30),
         pauseFor: const Duration(seconds: 5),
+        partialResults: false,
       );
-    } else {
-      setState(() => _isListening = false);
+    } else if (!available) {
+      if (mounted) {
+        setState(() {
+          _isListening = false;
+          _statusMessage = 'Microphone not available. Please use touch controls.';
+        });
+      }
     }
   }
 
-  /// Process language selection command
+  /// Process language selection command in both English and Urdu
   void _processCommand(String recognized) async {
     debugPrint("🎙 Language Page Recognized: $recognized");
     
+    // Stop listening while processing
+    await _speech.stop();
+    if (mounted) setState(() => _isListening = false);
+    
     bool commandMatched = false;
     
-    // Check for language selection commands
+    // ========== ENGLISH COMMANDS ==========
     if (recognized.contains('english') || 
+        recognized.contains('inglish') ||
         recognized.contains('انگریزی') ||
-        recognized.contains('انگلش')) {
+        recognized == 'en' ||
+        recognized == 'english' ||
+        recognized == 'angrezi' ||
+        recognized == 'انگلش') {
       commandMatched = true;
-      _selectLanguageAndNavigate("English");
-    } else if (recognized.contains('urdu') || 
-               recognized.contains('اردو')) {
+      await _selectLanguageAndNavigate("English");
+    }
+    // ========== URDU COMMANDS ==========
+    else if (recognized.contains('urdu') || 
+             recognized.contains('اردو') ||
+             recognized.contains('urdu') ||
+             recognized == 'urdu' ||
+             recognized == 'اردو' ||
+             recognized.contains('اردو زبان') ||
+             recognized.contains('urdu language')) {
       commandMatched = true;
-      _selectLanguageAndNavigate("Urdu");
+      await _selectLanguageAndNavigate("Urdu");
+    }
+    // ========== HELP/REPEAT COMMANDS ==========
+    else if (recognized.contains('help') ||
+             recognized.contains('مدد') ||
+             recognized.contains('repeat') ||
+             recognized.contains('دہرائیں') ||
+             recognized.contains('again') ||
+             recognized.contains('پھر کہیں') ||
+             recognized.contains('what are my options') ||
+             recognized.contains('کیا آپشنز ہیں')) {
+      commandMatched = true;
+      await _readPageContentBilingual(); // Read the page content again
+      // Resume listening after reading
+      if (mounted && !_isNavigating && selectedLanguage.isEmpty) await _startListening();
     }
     
-    // If command not recognized, ask to repeat
-    if (!commandMatched && recognized.length > 2) {
-      await _askToRepeat();
+    // If command not recognized, ask to repeat in both languages
+    if (!commandMatched && recognized.length > 2 && !_isNavigating) {
+      await _askToRepeatBilingual();
+    } else if (!commandMatched && !_isNavigating) {
+      // Restart listening for short/empty commands
+      if (mounted && selectedLanguage.isEmpty) await _startListening();
     }
   }
 
-  /// Ask user to repeat language selection
-  Future<void> _askToRepeat() async {
-    setState(() => _statusMessage = 'Command not understood. Please repeat.');
+  /// Ask user to repeat in both English and Urdu
+  Future<void> _askToRepeatBilingual() async {
+    if (mounted) {
+      setState(() => _statusMessage = 'Command not understood. Please repeat.');
+    }
     
     // Haptic feedback for error
     HapticFeedback.vibrate();
 
-    // Speak in both languages
-    await flutterTts.setLanguage('en-US');
-    await flutterTts.speak("I didn't catch that. Please say: English, or Urdu.");
-    await flutterTts.awaitSpeakCompletion(true);
+    // Only speak if voice mode is enabled
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (!isVoiceModeEnabled) {
+      if (mounted) {
+        setState(() => _statusMessage = 'Please select language using buttons.');
+      }
+      return;
+    }
 
+    // Speak in English
+    await flutterTts.setLanguage('en-US');
+    await VoiceManager.safeSpeak(
+      flutterTts,
+      "I didn't understand that. Please say: English or Urdu to select your language."
+    );
+    await VoiceManager.safeAwaitSpeakCompletion(flutterTts);
+
+    // Speak in Urdu
     try {
       await flutterTts.setLanguage('ur-PK');
-      await flutterTts.speak('میں نے نہیں سنا۔ براہ کرم کہیں: انگلش، یا اردو۔');
-      await flutterTts.awaitSpeakCompletion(true);
+      await VoiceManager.safeSpeak(
+        flutterTts,
+        'میں سمجھا نہیں۔ براہ کرم کہیں: انگلش یا اردو اپنی زبان منتخب کرنے کے لیے۔'
+      );
+      await VoiceManager.safeAwaitSpeakCompletion(flutterTts);
     } catch (e) {
       debugPrint('⚠️ Urdu repeat message not available');
     }
 
     // Resume listening
-    await _startListening();
+    if (mounted && !_isNavigating && selectedLanguage.isEmpty) await _startListening();
   }
 
-  /// Select language and navigate to next page
-  void _selectLanguageAndNavigate(String language) async {
-    _speech.stop();
-    setState(() {
-      _isListening = false;
-      selectedLanguage = language;
-      _statusMessage = '$language selected';
-    });
+  /// Select language and automatically navigate to dashboard
+  Future<void> _selectLanguageAndNavigate(String language) async {
+    if (_isNavigating) return; // Prevent multiple navigations
+    
+    _isNavigating = true;
+    await _speech.stop();
+    
+    if (mounted) {
+      setState(() {
+        _isListening = false;
+        selectedLanguage = language;
+        _statusMessage = '$language selected. Redirecting to dashboard...';
+      });
+    }
 
     // Haptic feedback for selection
     HapticFeedback.mediumImpact();
@@ -239,75 +333,140 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
       await PreferencesManager.setLanguage('en');
     }
 
-    debugPrint('✅ Language saved: $language');
+    debugPrint('✅ Language selected: $language');
 
-    // Speak confirmation
-    await _speakSelection(language);
+    // Speak confirmation in appropriate language
+    await _speakSelectionConfirmation(language);
 
-    // Navigate to next page
+    // Navigate to DashboardScreen after a short delay
     Future.delayed(const Duration(seconds: 2)).then((_) {
       if (mounted) {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (context) => const NameInputPage()),
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const DashboardScreen()),
+          (Route<dynamic> route) => false,
         );
       }
     });
   }
 
-  Future<void> _speakSelection(String language) async {
-    await flutterTts.setLanguage("en-US");
+  /// Speak language selection confirmation in both languages
+  Future<void> _speakSelectionConfirmation(String language) async {
+    // Only speak if voice mode is enabled
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (!isVoiceModeEnabled) return;
+
     if (language == "Urdu") {
-      await flutterTts.speak("You selected Urdu language interface. All future pages will use Urdu.");
-      await flutterTts.awaitSpeakCompletion(true);
-      
+      // Confirm in Urdu
       try {
         await flutterTts.setLanguage('ur-PK');
-        await flutterTts.speak('آپ نے اردو زبان کا انٹرفیس منتخب کیا۔ تمام مستقبل کے صفحات اردو میں ہوں گے۔');
-        await flutterTts.awaitSpeakCompletion(true);
+        await VoiceManager.safeSpeak(
+          flutterTts,
+          'آپ نے اردو زبان کا انٹرفیس منتخب کیا۔ شکریہ۔ اب آپ کو ڈیش بورڈ پر منتقل کیا جا رہا ہے۔'
+        );
+        await VoiceManager.safeAwaitSpeakCompletion(flutterTts);
+        
+        // Also confirm in English for clarity
+        await Future.delayed(const Duration(milliseconds: 500));
+        await flutterTts.setLanguage('en-US');
+        await VoiceManager.safeSpeak(
+          flutterTts,
+          "You selected Urdu interface. Thank you. Now redirecting you to the dashboard."
+        );
+        await VoiceManager.safeAwaitSpeakCompletion(flutterTts);
       } catch (e) {
-        debugPrint('⚠️ Urdu confirmation not available');
+        debugPrint('⚠️ Urdu confirmation not available, using English only');
+        await flutterTts.setLanguage('en-US');
+        await VoiceManager.safeSpeak(
+          flutterTts,
+          "You selected Urdu language interface. Now redirecting to dashboard."
+        );
+        await VoiceManager.safeAwaitSpeakCompletion(flutterTts);
       }
     } else {
-      await flutterTts.speak("You selected English language interface. All future pages will use English.");
-      await flutterTts.awaitSpeakCompletion(true);
+      // Confirm in English
+      await flutterTts.setLanguage('en-US');
+      await VoiceManager.safeSpeak(
+        flutterTts,
+        "You selected English language interface. Thank you. Now redirecting you to the dashboard."
+      );
+      await VoiceManager.safeAwaitSpeakCompletion(flutterTts);
+      
+      // Also confirm in Urdu if possible
+      try {
+        await Future.delayed(const Duration(milliseconds: 500));
+        await flutterTts.setLanguage('ur-PK');
+        await VoiceManager.safeSpeak(
+          flutterTts,
+          'آپ نے انگلش زبان کا انٹرفیس منتخب کیا۔ شکریہ۔ اب آپ کو ڈیش بورڈ پر منتقل کیا جا رہا ہے۔'
+        );
+        await VoiceManager.safeAwaitSpeakCompletion(flutterTts);
+      } catch (e) {
+        debugPrint('⚠️ Urdu confirmation not available for English selection');
+      }
     }
+  }
+
+  /// Manual language selection (touch mode) with auto-navigation
+  Future<void> _onLanguageSelected(String language) async {
+    if (_isNavigating) return; // Prevent multiple navigations
+    
+    // Stop listening if active
+    try {
+      await _speech.stop();
+    } catch (_) {}
+    
+    if (mounted) {
+      setState(() {
+        _isListening = false;
+        selectedLanguage = language;
+      });
+    }
+    
+    await _selectLanguageAndNavigate(language);
   }
 
   Widget _buildLanguageOption(String language) {
     final bool isSelected = selectedLanguage == language;
+    final bool isDisabled = _isNavigating || (selectedLanguage.isNotEmpty && !isSelected);
+    
     return GestureDetector(
-      onTap: () => _selectLanguageAndNavigate(language),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? const Color(0xFF1349EC).withOpacity(0.2)
-              : Colors.white.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(12),
-          border: isSelected
-              ? Border.all(color: const Color(0xFF1349EC), width: 2)
-              : null,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              language,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
+      onTap: isDisabled ? null : () => _onLanguageSelected(language),
+      child: Opacity(
+        opacity: isDisabled ? 0.5 : 1.0,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: isSelected
+              ? const Color(0xFF1349EC).withAlpha((0.2 * 255).round())
+              : Colors.white.withAlpha((0.05 * 255).round()),
+            borderRadius: BorderRadius.circular(12),
+            border: isSelected
+                ? Border.all(color: const Color(0xFF1349EC), width: 2)
+                : Border.all(color: Colors.white.withAlpha((0.1 * 255).round()), width: 1),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                language,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: isDisabled 
+                    ? Colors.white.withAlpha((0.5 * 255).round())
+                    : Colors.white,
+                ),
               ),
-            ),
-            Radio<String>(
-              value: language,
-              groupValue: selectedLanguage,
-              onChanged: (value) {
-                if (value != null) _selectLanguageAndNavigate(value);
-              },
-              activeColor: const Color(0xFF1349EC),
-            ),
-          ],
+              Radio<String>(
+                value: language,
+                groupValue: selectedLanguage,
+                onChanged: isDisabled ? null : (value) {
+                  if (value != null) _onLanguageSelected(value);
+                },
+                activeColor: const Color(0xFF1349EC),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -324,16 +483,11 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
               padding: const EdgeInsets.all(16.0),
               child: Row(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-                    onPressed: () {
-                      Navigator.of(context)
-                          .pushNamedAndRemoveUntil('/', (route) => false);
-                    },
-                  ),
+                  // No back button - user must select language
+                  const SizedBox(width: 40),
                   Expanded(
                     child: Text(
-                      Lang.t('language'),
+                      'Language Selection',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 20,
@@ -350,67 +504,186 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const SizedBox(height: 12),
-                    _buildLanguageOption("Urdu"),
-                    const SizedBox(height: 12),
-                    _buildLanguageOption("English"),
+                    // Welcome message (bilingual)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 30),
+                      child: Column(
+                        children: [
+                          Text(
+                            'Select Your Language',
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'اپنی زبان منتخب کریں',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.white.withAlpha((0.7 * 255).round()),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Select a language to automatically continue',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.white.withAlpha((0.6 * 255).round()),
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                          Text(
+                            'خود بخود جاری رکھنے کے لیے ایک زبان منتخب کریں',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.white.withAlpha((0.6 * 255).round()),
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    // Language options with bilingual labels
+                    Column(
+                      children: [
+                        _buildLanguageOption("Urdu"),
+                        const SizedBox(height: 16),
+                        _buildLanguageOption("English"),
+                      ],
+                    ),
+                    const SizedBox(height: 30),
+                    
+                    // Selection status and loading indicator
+                    if (selectedLanguage.isNotEmpty && !_isNavigating)
+                      Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withAlpha((0.2 * 255).round()),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.green, width: 1),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.check_circle, color: Colors.green.withAlpha((0.9 * 255).round())),
+                                const SizedBox(width: 10),
+                                Text(
+                                  'Selected: $selectedLanguage',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green.withAlpha((0.9 * 255).round()),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          const CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1349EC)),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Redirecting to dashboard...',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.white.withAlpha((0.7 * 255).round()),
+                            ),
+                          ),
+                          Text(
+                            'ڈیش بورڈ پر منتقل ہو رہا ہے...',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.white.withAlpha((0.7 * 255).round()),
+                            ),
+                          ),
+                        ],
+                      ),
+                    
                     const SizedBox(height: 20),
                     
-                    // Status indicators
+                    // Voice mode status indicators
                     if (_isSpeaking)
                       _buildStatusIndicator(
                         icon: Icons.volume_up,
-                        text: 'Speaking... / بول رہا ہے...',
+                        text: 'Reading page... / صفحہ پڑھ رہا ہے...',
                         color: Colors.blue,
                       ),
                     
                     if (_isListening)
                       _buildStatusIndicator(
                         icon: Icons.mic,
-                        text: 'Listening... Say "English" or "Urdu"',
+                        text: 'Listening... / سن رہا ہے...',
                         color: Colors.green,
                       ),
                     
-                    if (!_isSpeaking && !_isListening)
+                    if (!_isSpeaking && !_isListening && selectedLanguage.isEmpty && !_isNavigating)
                       Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          _statusMessage,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF9DA4B9),
-                          ),
-                          textAlign: TextAlign.center,
+                        padding: const EdgeInsets.only(top: 20),
+                        child: Column(
+                          children: [
+                            Text(
+                              _statusMessage,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF9DA4B9),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            // Bilingual hint
+                            Text(
+                              'Select a language to continue automatically',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white.withAlpha((0.5 * 255).round()),
+                              ),
+                            ),
+                            Text(
+                              'خود بخود جاری رکھنے کے لیے ایک زبان منتخب کریں',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white.withAlpha((0.5 * 255).round()),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    
+                    // Voice hint (bilingual)
+                    if (_isListening && selectedLanguage.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 20),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Say: "English" or "Urdu" to select',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white.withAlpha((0.6 * 255).round()),
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'منتخب کرنے کے لیے کہیں: "انگلش" یا "اردو"',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white.withAlpha((0.6 * 255).round()),
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                   ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1349EC),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: () {
-                    _selectLanguageAndNavigate(selectedLanguage);
-                  },
-                  child: Text(
-                    Lang.t('save'),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
                 ),
               ),
             ),
@@ -426,23 +699,25 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: color.withAlpha((0.2 * 255).round()),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color, width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: color.withOpacity(0.8)),
-          const SizedBox(width: 8),
+          Icon(icon, size: 20, color: color.withAlpha((0.9 * 255).round())),
+          const SizedBox(width: 12),
           Flexible(
             child: Text(
               text,
               style: TextStyle(
-                fontSize: 12,
-                color: color.withOpacity(0.8),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: color.withAlpha((0.9 * 255).round()),
               ),
               textAlign: TextAlign.center,
             ),
@@ -454,8 +729,22 @@ class _LanguageSelectionScreenState extends State<LanguageSelectionScreen> {
 
   @override
   void dispose() {
-    _speech.stop();
-    flutterTts.stop();
+    try {
+      VoiceManager.safeStopListening(_speech);
+    } catch (_) {}
+    try {
+      flutterTts.stop();
+    } catch (_) {}
     super.dispose();
+  }
+
+  @override
+  Future<void> stopTtsAndListening() async {
+    try {
+      await VoiceManager.safeStopListening(_speech);
+    } catch (_) {}
+    try {
+      await flutterTts.stop();
+    } catch (_) {}
   }
 }

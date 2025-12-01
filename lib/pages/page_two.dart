@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:nav_aif_fyp/pages/page_three.dart';
-import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:nav_aif_fyp/utils/lang.dart';
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:nav_aif_fyp/services/voice_manager.dart';
+import 'package:nav_aif_fyp/services/route_tts_observer.dart';
 
 void main() {
   runApp(const NavAIApp());
@@ -27,7 +28,7 @@ class UseLocationPage extends StatefulWidget {
   State<UseLocationPage> createState() => _UseLocationPageState();
 }
 
-class _UseLocationPageState extends State<UseLocationPage> {
+class _UseLocationPageState extends State<UseLocationPage> with RouteAwareTtsStopper {
   final FlutterTts _tts = FlutterTts();
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isListening = false;
@@ -50,17 +51,14 @@ class _UseLocationPageState extends State<UseLocationPage> {
   Future<void> _loadPreferences() async {
     await Lang.init();
     final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
-    
-    await _initTTS();
-    
-    // Only speak if voice mode is enabled
+    // Only initialize and use TTS when voice mode is enabled
     if (isVoiceModeEnabled) {
+      await _initTTS();
+      // _speakOptions will also start listening when it finishes
       await _speakOptions();
-    }
-    
-    // Start listening for voice input
-    if (isVoiceModeEnabled) {
-      await _startListening();
+    } else {
+      // Touch mode: ensure UI reflects no listening
+      if (mounted) setState(() => _isListening = false);
     }
   }
 
@@ -177,11 +175,19 @@ class _UseLocationPageState extends State<UseLocationPage> {
 
     String location = Lang.t(options[index]['label']);
 
-  await VoiceManager.safeSpeak(_tts, 'You selected $location. Moving to navigation mode selection.');
-  await VoiceManager.safeAwaitSpeakCompletion(_tts);
+    // Only speak confirmation if voice mode is enabled
+    final isVoiceModeEnabled = await PreferencesManager.isVoiceModeEnabled();
+    if (isVoiceModeEnabled) {
+      await VoiceManager.safeSpeak(_tts, 'You selected $location. Moving to navigation mode selection.');
+      await VoiceManager.safeAwaitSpeakCompletion(_tts);
+    }
 
+    // Ensure any speaking has stopped before navigating away
+    try {
+      await _tts.stop();
+    } catch (_) {}
     if (mounted) {
-      Navigator.of(context).push(
+      await Navigator.of(context).push(
         MaterialPageRoute(builder: (context) => const GuidePageBody()),
       );
     }
@@ -228,7 +234,7 @@ class _UseLocationPageState extends State<UseLocationPage> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.2),
+                  color: Colors.green.withAlpha((0.2 * 255).round()),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: Colors.green, width: 1),
                 ),
@@ -337,8 +343,23 @@ class _UseLocationPageState extends State<UseLocationPage> {
 
   @override
   void dispose() {
-    _speech.stop();
-    _tts.stop();
+    // unsubscribe handled by mixin via super.dispose
+    try {
+      VoiceManager.safeStopListening(_speech);
+    } catch (_) {}
+    try {
+      _tts.stop();
+    } catch (_) {}
     super.dispose();
+  }
+
+  @override
+  Future<void> stopTtsAndListening() async {
+    try {
+      await VoiceManager.safeStopListening(_speech);
+    } catch (_) {}
+    try {
+      await _tts.stop();
+    } catch (_) {}
   }
 }

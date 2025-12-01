@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:nav_aif_fyp/pages/privacy.dart';
 import 'package:nav_aif_fyp/pages/page_four.dart'; 
 import 'package:nav_aif_fyp/pages/profile.dart'; 
-import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:nav_aif_fyp/utils/lang.dart';
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -283,11 +283,10 @@ class _SettingsPageState extends State<SettingsPage> {
                       await _tts.speak('${Lang.t('opening')} ${Lang.t('privacy')}.');
                       await _tts.awaitSpeakCompletion(true);
                     }
-                    if (mounted) {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(builder: (context) => const PrivacyPage()),
-                      );
-                    }
+                    if (!mounted) return;
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (context) => const PrivacyPage()),
+                    );
                   },
                 ),
                 _settingsCard(
@@ -327,7 +326,7 @@ class _SettingsPageState extends State<SettingsPage> {
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.2),
+                color: Colors.green.withAlpha((0.2 * 255).round()),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: Colors.green, width: 1),
               ),
@@ -352,7 +351,7 @@ class _SettingsPageState extends State<SettingsPage> {
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: const Color(0xFF0d1b2a),
-          border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1))),
+          border: Border(top: BorderSide(color: Colors.white.withAlpha((0.1 * 255).round()))),
         ),
         child: Row(
           children: [
@@ -379,7 +378,7 @@ class _SettingsPageState extends State<SettingsPage> {
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
+          color: Colors.white.withAlpha((0.05 * 255).round()),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -387,7 +386,7 @@ class _SettingsPageState extends State<SettingsPage> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF2563eb).withOpacity(0.25),
+                color: Color(0xFF2563eb).withAlpha((0.25 * 255).round()),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: const Color(0xFF2563eb)),
@@ -410,7 +409,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     Lang.t(subtitleKey),
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.white.withOpacity(0.6),
+                      color: Colors.white.withAlpha((0.6 * 255).round()),
                     ),
                   ),
                 ],

@@ -4,9 +4,10 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:permission_handler/permission_handler.dart';
-import 'package:nav_aif_fyp/pages/lang.dart';
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
+import 'package:nav_aif_fyp/services/voice_manager.dart';
+import 'package:nav_aif_fyp/services/route_tts_observer.dart';
+import 'package:nav_aif_fyp/pages/lang.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,7 +25,8 @@ class NavAIApp extends StatelessWidget {
       title: 'NavAI',
       theme: ThemeData.dark(),
       home: const NavAIHomePage(),
-      routes: {'/lang': (context) => const NavAILanguagePage()},
+      routes: {'/lang': (context) => NavAILanguagePage()},
+      navigatorObservers: [routeObserver],
     );
   }
 }
@@ -43,23 +45,23 @@ class _NavAIHomePageState extends State<NavAIHomePage>
   final FlutterTts _flutterTts = FlutterTts();
   final stt.SpeechToText _speech = stt.SpeechToText();
 
-  // Voice interaction state
   bool _isSpeaking = false;
   bool _isListening = false;
-  bool _bilingualIntroComplete = false;
-  bool _microphoneReady = false;
-  
-  // Status messages for accessibility
+  bool _autoRedirectEnabled = true;
+  bool _hasSpokenIntro = false;
   String _statusMessage = 'Initializing...';
 
   @override
   void initState() {
     super.initState();
     _initAnimations();
-    _initializeVoiceSystem();
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeVoiceSystemSequentially();
+    });
   }
 
-  /// Initialize animations
+  /// animations - Using EXACT animations from the second code
   void _initAnimations() {
     _pathController = AnimationController(
       vsync: this,
@@ -67,7 +69,7 @@ class _NavAIHomePageState extends State<NavAIHomePage>
     );
     _starController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 7000),
+      duration: const Duration(milliseconds: 7000), // 7000ms as in second code
     );
 
     _pathController.addStatusListener((status) {
@@ -78,8 +80,9 @@ class _NavAIHomePageState extends State<NavAIHomePage>
 
     _starController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
+        // Loop animation like in second code
         Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) {
+          if (mounted && _autoRedirectEnabled) {
             _pathController.reset();
             _starController.reset();
             _pathController.forward(from: 0.0);
@@ -91,42 +94,52 @@ class _NavAIHomePageState extends State<NavAIHomePage>
     _pathController.forward();
   }
 
-  /// Initialize complete voice system with bilingual support
-  Future<void> _initializeVoiceSystem() async {
+  /// voice system initialization
+  Future<void> _initializeVoiceSystemSequentially() async {
     try {
       setState(() => _statusMessage = 'Initializing voice system...');
 
-      // Step 1: Initialize TTS
       await _initTTS();
       
-      // Step 2: Initialize microphone in background (non-blocking)
-      _initMicrophoneInBackground();
+      setState(() {
+        _isSpeaking = true;
+        _statusMessage = 'Welcome to NavAI...';
+      });
       
-      // Step 3: Start bilingual introduction
       await _speakBilingualIntroduction();
       
-      // Step 4: Wait for microphone to be ready
-      await _waitForMicrophone();
-      
-      // Step 5: Start listening for commands
-      await _startListening();
+      setState(() {
+        _isSpeaking = false;
+        _hasSpokenIntro = true;
+        _statusMessage = 'Redirecting to language selection...';
+      });
+
+      // Redirect after introduction is complete
+      await Future.delayed(const Duration(milliseconds: 1000));
+      _navigateToLang();
       
     } catch (e) {
       debugPrint('❌ Voice system initialization error: $e');
-      setState(() => _statusMessage = 'Voice system unavailable. Touch mode enabled.');
-      // Fall back to touch-only mode
+      if (mounted) {
+        setState(() => _statusMessage = 'System initializing...');
+        // Even on error, redirect after delay
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted && _autoRedirectEnabled) {
+            _navigateToLang();
+          }
+        });
+      }
     }
   }
 
   /// Initialize TTS with proper configuration
   Future<void> _initTTS() async {
     await _flutterTts.setLanguage('en-US');
-    await _flutterTts.setSpeechRate(0.5); // Slower for clarity
+    await _flutterTts.setSpeechRate(0.5);
     await _flutterTts.setPitch(1.0);
     await _flutterTts.setVolume(1.0);
     await _flutterTts.awaitSpeakCompletion(true);
 
-    // Setup TTS event handlers
     _flutterTts.setStartHandler(() {
       if (mounted) setState(() => _isSpeaking = true);
     });
@@ -143,348 +156,74 @@ class _NavAIHomePageState extends State<NavAIHomePage>
     debugPrint('✅ TTS initialized');
   }
 
-  /// Initialize microphone in background (non-blocking)
-  void _initMicrophoneInBackground() {
-    Future.microtask(() async {
-      try {
-        setState(() => _statusMessage = 'Preparing microphone...');
-        
-        bool available = await _speech.initialize(
-          onStatus: (status) {
-            debugPrint('🎙️ Speech status: $status');
-            if (status == 'done' && _isListening) {
-              // Restart listening if it stops
-              _startListening();
-            }
-          },
-          onError: (error) {
-            debugPrint('🎙️ Speech error: $error');
-            if (mounted) {
-              setState(() => _statusMessage = 'Microphone error. Using touch mode.');
-            }
-          },
-        );
-
-        if (available) {
-          debugPrint('✅ Microphone initialized and ready');
-          if (mounted) {
-            setState(() {
-              _microphoneReady = true;
-              _statusMessage = 'Microphone ready';
-            });
-          }
-        } else {
-          debugPrint('❌ Microphone not available');
-          if (mounted) {
-            setState(() => _statusMessage = 'Microphone unavailable. Touch mode only.');
-          }
-        }
-      } catch (e) {
-        debugPrint('❌ Microphone initialization error: $e');
-      }
-    });
-  }
-
-  /// Initialize microphone immediately and await readiness.
-  Future<void> _initMicrophoneNow() async {
-    try {
-      setState(() => _statusMessage = 'Requesting microphone permission...');
-
-      final micStatus = await Permission.microphone.request();
-      if (!micStatus.isGranted) {
-        debugPrint('Microphone permission denied');
-        setState(() => _statusMessage = 'Microphone permission denied.');
-        _microphoneReady = false;
-        return;
-      }
-
-      setState(() => _statusMessage = 'Initializing microphone...');
-      final available = await _speech.initialize(
-        onStatus: (status) {
-          debugPrint('🎙️ Speech status (now): $status');
-          if (status == 'done' && _isListening) {
-            _startListening();
-          }
-        },
-        onError: (error) {
-          debugPrint('🎙️ Speech error (now): $error');
-          if (mounted) setState(() => _statusMessage = 'Microphone error');
-        },
-      );
-
-      if (available) {
-        debugPrint('✅ Microphone initialized (now)');
-        if (mounted) {
-          setState(() {
-            _microphoneReady = true;
-            _statusMessage = 'Microphone ready';
-          });
-        }
-      } else {
-        debugPrint('❌ Microphone not available (now)');
-        if (mounted) setState(() => _statusMessage = 'Microphone unavailable');
-        _microphoneReady = false;
-      }
-    } catch (e) {
-      debugPrint('❌ Microphone initialization error (now): $e');
-      if (mounted) setState(() => _statusMessage = 'Microphone init error');
-      _microphoneReady = false;
-    }
-  }
-
-  /// Wait for microphone to be ready (with timeout)
-  Future<void> _waitForMicrophone() async {
-    int waitCount = 0;
-    const maxWait = 10; // 5 seconds max
-
-    while (!_microphoneReady && waitCount < maxWait) {
-      await Future.delayed(const Duration(milliseconds: 500));
-      waitCount++;
-    }
-
-    if (!_microphoneReady) {
-      debugPrint('⚠️ Microphone initialization timeout. Proceeding anyway.');
-    }
-  }
-
-  /// Speak bilingual introduction (English first, then Urdu)
   Future<void> _speakBilingualIntroduction() async {
-    setState(() => _statusMessage = 'Speaking introduction...');
-
     try {
       // === ENGLISH INTRODUCTION ===
       await _flutterTts.setLanguage('en-US');
-      await _flutterTts.speak(
-        'Welcome to Nav AI. Smart navigation, designed for you. '
-        'You can say: Continue with voice, or Continue with touch. '
-        'You can also just say: voice, or touch.',
+      await VoiceManager.safeSpeak(
+        _flutterTts,
+        'Hello! Welcome to Nav AI. AI Powered Indoor Guidance and Object Detection. '
+        'Smart navigation, designed for you.',
       );
-      await _flutterTts.awaitSpeakCompletion(true);
+      await VoiceManager.safeAwaitSpeakCompletion(_flutterTts);
       
       // Pause between languages
-      await Future.delayed(const Duration(milliseconds: 1000));
+      await Future.delayed(const Duration(milliseconds: 800));
 
       // === URDU INTRODUCTION ===
       try {
         await _flutterTts.setLanguage('ur-PK');
-        await _flutterTts.speak(
-          'نیو اے آئی میں خوش آمدید۔ سمارٹ نیویگیشن، آپ کے لیے تیار کی گئی۔ '
-          'آپ کہہ سکتے ہیں: آواز کے ساتھ جاری رکھیں، یا ٹچ کے ساتھ جاری رکھیں۔ '
-          'آپ صرف یہ بھی کہہ سکتے ہیں: آواز، یا ٹچ۔',
+        await VoiceManager.safeSpeak(
+          _flutterTts,
+          'السلام علیکم! نیو اے آئی میں خوش آمدید۔ اے آئی سے چلنے والی انڈور رہنمائی اور چیزوں کی شناخت۔ '
+          'سمارٹ نیویگیشن، آپ کے لیے تیار کی گئی۔',
         );
-        await _flutterTts.awaitSpeakCompletion(true);
+        await VoiceManager.safeAwaitSpeakCompletion(_flutterTts);
       } catch (e) {
-        debugPrint('⚠️ Urdu TTS not available, skipping: $e');
-        // Continue even if Urdu TTS fails
+        debugPrint('⚠ Urdu TTS not available, skipping: $e');
       }
 
-      // Pause before listening
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      setState(() {
-        _bilingualIntroComplete = true;
-        _statusMessage = 'Listening for your command...';
-      });
-
       debugPrint('✅ Bilingual introduction complete');
+
     } catch (e) {
       debugPrint('❌ Error during introduction: $e');
-      setState(() => _statusMessage = 'Introduction error. Touch mode available.');
     }
   }
 
-  /// Start listening for voice commands
-  Future<void> _startListening() async {
-    if (!_microphoneReady) {
-      debugPrint('⚠️ Cannot start listening: microphone not ready');
-      return;
-    }
-
-    if (!_bilingualIntroComplete) {
-      debugPrint('⚠️ Cannot start listening: introduction not complete');
-      return;
-    }
+  Future<void> _navigateToLang() async {
+    // Disable auto-redirect to prevent multiple navigations
+    _autoRedirectEnabled = false;
 
     try {
-      setState(() {
-        _isListening = true;
-        _statusMessage = 'Listening... Say "voice" or "touch"';
-      });
-
-      await _speech.listen(
-        localeId: 'en-US', // Use English for initial detection
-        onResult: (result) {
-          if (result.finalResult) {
-            String recognized = result.recognizedWords.toLowerCase().trim();
-            if (recognized.isNotEmpty) {
-              _processCommand(recognized);
-            }
-          }
-        },
-        listenFor: const Duration(seconds: 30), // Listen for 30 seconds
-        pauseFor: const Duration(seconds: 5), // 5 second pause threshold
-        partialResults: false,
-      );
-    } catch (e) {
-      debugPrint('❌ Error starting listening: $e');
-      setState(() {
-        _isListening = false;
-        _statusMessage = 'Listening error. Use touch controls.';
-      });
-    }
-  }
-
-  /// Process recognized voice command
-  void _processCommand(String recognized) async {
-    debugPrint('🎙️ Recognized command: "$recognized"');
-
-    // Stop listening while processing
-    await _speech.stop();
-    setState(() => _isListening = false);
-
-    bool commandMatched = false;
-
-    // === VOICE MODE COMMANDS ===
-    if (_matchesVoiceCommand(recognized)) {
-      commandMatched = true;
-      await _handleVoiceMode();
-    }
-    // === TOUCH MODE COMMANDS ===
-    else if (_matchesTouchCommand(recognized)) {
-      commandMatched = true;
-      await _handleTouchMode();
-    }
-
-    // If command not recognized, ask to repeat
-    if (!commandMatched && recognized.length > 2) {
-      await _askToRepeat();
-    } else if (!commandMatched) {
-      // Resume listening for very short/empty input
-      await _startListening();
-    }
-  }
-
-  /// Check if input matches voice mode command
-  bool _matchesVoiceCommand(String input) {
-    const voiceKeywords = [
-      'voice',
-      'continue with voice',
-      'start with voice',
-      'voice mode',
-      'awaz', // Urdu transliteration
-      'آواز', // Urdu script
-      'آواز کے ساتھ', // Urdu: with voice
-    ];
-
-    return voiceKeywords.any((keyword) => input.contains(keyword));
-  }
-
-  /// Check if input matches touch mode command
-  bool _matchesTouchCommand(String input) {
-    const touchKeywords = [
-      'touch',
-      'continue with touch',
-      'start with touch',
-      'touch mode',
-      'tap',
-      'ٹچ', // Urdu script
-    ];
-
-    return touchKeywords.any((keyword) => input.contains(keyword));
-  }
-
-  /// Handle voice mode selection
-  Future<void> _handleVoiceMode() async {
-    setState(() => _statusMessage = 'Voice mode selected');
-
-    // Save preference
-    await PreferencesManager.setVoiceModeEnabled(true);
-    // Initialize microphone right away so next page can listen immediately
-    await _initMicrophoneNow();
-    debugPrint('✅ Voice mode enabled and saved');
-
-    // Provide haptic feedback
-    HapticFeedback.mediumImpact();
-
-    // Speak confirmation in English
-    await _flutterTts.setLanguage('en-US');
-    await _flutterTts.speak('Voice mode selected. Navigating to language selection.');
-    await _flutterTts.awaitSpeakCompletion(true);
-
-    // Navigate to language page
-    _navigateToLang();
-  }
-
-  /// Handle touch mode selection
-  Future<void> _handleTouchMode() async {
-    setState(() => _statusMessage = 'Touch mode selected');
-
-    // Save preference
-    await PreferencesManager.setVoiceModeEnabled(false);
-    debugPrint('✅ Touch mode enabled and saved');
-
-    // Provide haptic feedback
-    HapticFeedback.lightImpact();
-
-    // Speak confirmation in English
-    await _flutterTts.setLanguage('en-US');
-    await _flutterTts.speak('Touch mode selected. You can now use touch controls with voice guidance. Navigating to language selection.');
-    await _flutterTts.awaitSpeakCompletion(true);
-
-    // Navigate to language page
-    _navigateToLang();
-  }
-
-  /// Ask user to repeat command
-  Future<void> _askToRepeat() async {
-    setState(() => _statusMessage = 'Command not understood. Please repeat.');
-
-    // Provide haptic feedback for error
-    HapticFeedback.vibrate();
-
-    // Speak in both languages
-    await _flutterTts.setLanguage('en-US');
-    await _flutterTts.speak(
-      "I didn't catch that. Please say: voice, or touch.",
-    );
-    await _flutterTts.awaitSpeakCompletion(true);
-
-    try {
-      await _flutterTts.setLanguage('ur-PK');
-      await _flutterTts.speak('میں نے نہیں سنا۔ براہ کرم کہیں: آواز، یا ٹچ۔');
-      await _flutterTts.awaitSpeakCompletion(true);
-    } catch (e) {
-      debugPrint('⚠️ Urdu repeat message not available');
-    }
-
-    // Resume listening
-    await _startListening();
-  }
-
-  /// Navigate to language selection page
-  void _navigateToLang() {
-    try {
-      _speech.stop();
+      VoiceManager.safeStopListening(_speech);
     } catch (_) {}
-    
-    setState(() => _isListening = false);
+
+    if (mounted) setState(() => _isListening = false);
+
+    VoiceManager.resetMicrophoneState();
+
+    try {
+      await _flutterTts.stop();
+    } catch (_) {}
 
     if (mounted) {
-      Navigator.push(
+      await Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const NavAILanguagePage()),
+        MaterialPageRoute(builder: (context) => NavAILanguagePage()),
       );
     }
   }
 
   @override
   void dispose() {
+    _autoRedirectEnabled = false; // Prevent any redirects during dispose
     try {
       _flutterTts.stop();
-      _speech.stop();
+      VoiceManager.safeStopListening(_speech);
     } catch (_) {}
     _pathController.dispose();
     _starController.dispose();
+    VoiceManager.resetMicrophoneState();
     super.dispose();
   }
 
@@ -551,11 +290,11 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                               ),
                               const SizedBox(height: 20),
                               
-                              // Title (bilingual)
+                              // Title
                               const Padding(
                                 padding: EdgeInsets.symmetric(horizontal: 8),
                                 child: Text(
-                                  'Welcome to Nav AI / نیو اے آئی میں خوش آمدید',
+                                  'NavAI: AI-Powered Indoor Guidance & Object Detection',
                                   style: TextStyle(
                                     fontSize: 22,
                                     fontWeight: FontWeight.w900,
@@ -566,7 +305,7 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                               ),
                               const SizedBox(height: 10),
                               
-                              // Subtitle (bilingual)
+                              // Subtitle
                               const Padding(
                                 padding: EdgeInsets.symmetric(horizontal: 8),
                                 child: Text(
@@ -578,39 +317,20 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                                   textAlign: TextAlign.center,
                                 ),
                               ),
+                              const SizedBox(height: 30),
+                              
+                              // Loading indicator
+                              const CircularProgressIndicator(
+                                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2563eb)),
+                                strokeWidth: 3,
+                              ),
                               const SizedBox(height: 20),
                               
-                              // Voice mode button
-                              _buildButton(
-                                'Start with Voice / آواز سے شروع کریں',
-                                Icons.mic,
-                                const Color(0xFF2563eb),
-                                Colors.white,
-                                onTap: () async {
-                                  await PreferencesManager.setVoiceModeEnabled(true);
-                                  _navigateToLang();
-                                },
-                              ),
-                              
-                              // Touch mode button
-                              _buildButton(
-                                'Continue with Touch / ٹچ کے ذریعے جاری رکھیں',
-                                Icons.smartphone,
-                                const Color(0xFF1f2937),
-                                const Color(0xFFd1d5db),
-                                borderColor: const Color(0xFF374151),
-                                onTap: () async {
-                                  await PreferencesManager.setVoiceModeEnabled(false);
-                                  _navigateToLang();
-                                },
-                              ),
-                              
-                              // Status indicators
+                              // Status message
                               Padding(
                                 padding: const EdgeInsets.only(top: 10),
                                 child: Column(
                                   children: [
-                                    // Speaking indicator
                                     if (_isSpeaking)
                                       _buildStatusIndicator(
                                         icon: Icons.volume_up,
@@ -618,16 +338,7 @@ class _NavAIHomePageState extends State<NavAIHomePage>
                                         color: Colors.blue,
                                       ),
                                     
-                                    // Listening indicator
-                                    if (_isListening)
-                                      _buildStatusIndicator(
-                                        icon: Icons.mic,
-                                        text: 'Listening... / سن رہا ہے...',
-                                        color: Colors.green,
-                                      ),
-                                    
-                                    // Status message
-                                    if (!_isSpeaking && !_isListening)
+                                    if (!_isSpeaking)
                                       Padding(
                                         padding: const EdgeInsets.only(top: 8),
                                         child: Text(
@@ -657,51 +368,6 @@ class _NavAIHomePageState extends State<NavAIHomePage>
     );
   }
 
-  /// Build button widget
-  Widget _buildButton(
-      String text, IconData icon, Color background, Color foreground,
-      {Color? borderColor, VoidCallback? onTap}) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 5),
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: onTap ?? _navigateToLang,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: background,
-          foregroundColor: foreground,
-          elevation: 0,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: borderColor != null
-                ? BorderSide(color: borderColor, width: 1)
-                : BorderSide.none,
-          ),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 20),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                text,
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build status indicator widget
   Widget _buildStatusIndicator({
     required IconData icon,
     required String text,
@@ -710,21 +376,21 @@ class _NavAIHomePageState extends State<NavAIHomePage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: color.withAlpha((0.2 * 255).round()),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color, width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: color.withOpacity(0.8)),
+          Icon(icon, size: 16, color: color.withAlpha((0.8 * 255).round())),
           const SizedBox(width: 8),
           Flexible(
             child: Text(
               text,
               style: TextStyle(
                 fontSize: 12,
-                color: color.withOpacity(0.8),
+                color: color.withAlpha((0.8 * 255).round()),
               ),
               textAlign: TextAlign.center,
             ),
@@ -749,7 +415,7 @@ class _NavAIHomePageState extends State<NavAIHomePage>
   }
 }
 
-// PathAnimationPainter class remains unchanged
+// PathAnimationPainter - EXACT COPY from second code
 class PathAnimationPainter extends CustomPainter {
   final Animation<double> pathAnimation;
   final Animation<double> starAnimation;
@@ -868,6 +534,7 @@ class PathAnimationPainter extends CustomPainter {
         double starSize = 40 + 10 * math.sin(math.pi * starAnimation.value);
         double opacity = 1.0;
 
+        // EXACT opacity calculations from second code (using 7.0 denominator)
         const double invisibleFracStart = 0.2 / 7.0;
         const double invisibleFracEnd = 0.5 / 7.0;
         if (starAnimation.value < invisibleFracStart) {

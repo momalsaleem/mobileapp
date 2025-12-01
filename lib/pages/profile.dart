@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:nav_aif_fyp/pages/settings.dart';
 import 'package:nav_aif_fyp/pages/page_four.dart'; // Import DashboardScreen
-import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:nav_aif_fyp/utils/lang.dart';
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -259,7 +259,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: _voiceId,
+                  initialValue: _voiceId,
                   dropdownColor: const Color(0xFF1a2233),
                   style: TextStyle(color: Colors.white),
                   decoration: InputDecoration(
@@ -289,7 +289,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               children: [
                 DropdownButtonFormField<String>(
-                  value: _language,
+                  initialValue: _language,
                   dropdownColor: const Color(0xFF1a2233),
                   style: TextStyle(color: Colors.white),
                   decoration: InputDecoration(
@@ -395,12 +395,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 12),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2563eb).withOpacity(0.2),
+              backgroundColor: Color(0xFF2563eb).withAlpha((0.2 * 255).round()),
               foregroundColor: const Color(0xFF2563eb),
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: const Color(0xFF2563eb).withOpacity(0.5)),
+                side: BorderSide(color: Color(0xFF2563eb).withAlpha((0.5 * 255).round())),
               ),
             ),
             onPressed: () {
@@ -414,7 +414,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: const Color(0xFF0d1b2a),
-          border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1))),
+          border: Border(top: BorderSide(color: Colors.white.withAlpha((0.1 * 255).round()))),
         ),
         child: Row(
           children: [

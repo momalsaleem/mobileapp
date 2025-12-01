@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:nav_aif_fyp/utils/lang.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:nav_aif_fyp/services/voice_manager.dart';

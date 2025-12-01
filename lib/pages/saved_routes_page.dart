@@ -39,10 +39,10 @@ class SavedRoutesPage extends StatelessWidget {
                 final routeName = savedRoutes[index];
                 return Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
+                    color: Colors.white.withAlpha((0.05 * 255).round()),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: Colors.white.withOpacity(0.1),
+                      color: Colors.white.withAlpha((0.1 * 255).round()),
                       width: 1,
                     ),
                   ),

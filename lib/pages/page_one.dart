@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:nav_aif_fyp/pages/page_two.dart';
-import 'package:nav_aif_fyp/pages/lang.dart';
+import 'package:nav_aif_fyp/utils/lang.dart';
 import 'package:nav_aif_fyp/services/preferences_manager.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:nav_aif_fyp/services/voice_manager.dart';
+import 'package:nav_aif_fyp/services/route_tts_observer.dart';
 
 class NameInputPage extends StatefulWidget {
   const NameInputPage({super.key});
@@ -13,7 +14,7 @@ class NameInputPage extends StatefulWidget {
   State<NameInputPage> createState() => _NameInputPageState();
 }
 
-class _NameInputPageState extends State<NameInputPage> {
+class _NameInputPageState extends State<NameInputPage> with RouteAwareTtsStopper {
   final FlutterTts _tts = FlutterTts();
   final stt.SpeechToText _speech = stt.SpeechToText();
   final TextEditingController _nameController = TextEditingController();
@@ -125,9 +126,17 @@ class _NameInputPageState extends State<NameInputPage> {
     }
   }
 
-  void _navigateToNext() {
+  Future<void> _navigateToNext() async {
+    // Stop any speaking/listening before navigating away
+    try {
+      await VoiceManager.safeStopListening(_speech);
+    } catch (_) {}
+    try {
+      await _tts.stop();
+    } catch (_) {}
+
     if (mounted) {
-      Navigator.of(context).push(
+      await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (context) => const UseLocationPage(),
         ),
@@ -138,8 +147,21 @@ class _NameInputPageState extends State<NameInputPage> {
   @override
   void dispose() {
     VoiceManager.safeStopListening(_speech);
+    try {
+      _tts.stop();
+    } catch (_) {}
     _nameController.dispose();
     super.dispose();
+  }
+
+  @override
+  Future<void> stopTtsAndListening() async {
+    try {
+      await VoiceManager.safeStopListening(_speech);
+    } catch (_) {}
+    try {
+      await _tts.stop();
+    } catch (_) {}
   }
 
   @override
